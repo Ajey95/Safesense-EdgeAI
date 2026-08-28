@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="430" viewBox="0 0 1400 430" role="img" aria-labelledby="title desc">
+  <title id="title">SafeSense EdgeAI architecture</title>
+  <desc id="desc">Three-stage architecture from ESP32 environmental sensing and Wi-Fi transmission, through ESP32 Wi-Fi CSI and TinyML edge fusion, to cloud incident monitoring with acknowledgement status returned.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#334155"/>
+    </marker>
+    <style>
+      .box { fill:#ffffff; stroke:#334155; stroke-width:2; rx:18; }
+      .title { font:700 24px Arial,sans-serif; fill:#0f172a; }
+      .sub { font:700 18px Arial,sans-serif; fill:#334155; }
+      .body { font:16px Arial,sans-serif; fill:#334155; }
+      .label { font:600 15px Arial,sans-serif; fill:#0f172a; }
+      .line { stroke:#334155; stroke-width:2.5; fill:none; marker-end:url(#arrow); }
+      .dash { stroke:#64748b; stroke-width:2; stroke-dasharray:8 7; fill:none; marker-end:url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1400" height="430" fill="#f8fafc"/>
+
+  <text x="700" y="42" text-anchor="middle" class="title">SafeSense — Risk-Triggered Wi-Fi CSI + TinyML Edge Architecture</text>
+
+  <rect class="box" x="40" y="85" width="390" height="270"/>
+  <text x="65" y="120" class="sub">Edge Node 1 — ESP32 Sensor + Wi-Fi TX</text>
+  <text x="65" y="158" class="body">• Reads gas, temperature, humidity and pressure sensors</text>
+  <text x="65" y="190" class="body">• Performs threshold-based danger screening</text>
+  <text x="65" y="222" class="body">• Keeps Wi-Fi available</text>
+  <text x="65" y="254" class="body">• Sends CSI probing packets</text>
+  <text x="65" y="286" class="body">• Sends risk trigger to Edge Node 2</text>
+
+  <rect class="box" x="505" y="85" width="390" height="270"/>
+  <text x="530" y="120" class="sub">Edge Node 2 — ESP32 Wi-Fi RX + TinyML</text>
+  <text x="530" y="158" class="body">• Receives Wi-Fi packets</text>
+  <text x="530" y="190" class="body">• Extracts CSI / RSSI features</text>
+  <text x="530" y="222" class="body">• Runs TinyML only when risk trigger is received</text>
+  <text x="530" y="254" class="body">• Confirms presence or activity</text>
+  <text x="530" y="286" class="body">• Performs final edge fusion decision</text>
+
+  <rect class="box" x="970" y="85" width="390" height="270"/>
+  <text x="995" y="120" class="sub">Cloud Layer — Incident Monitoring</text>
+  <text x="995" y="158" class="body">• Receives confirmed incident JSON</text>
+  <text x="995" y="190" class="body">• Stores incident records</text>
+  <text x="995" y="222" class="body">• Shows dashboard status</text>
+  <text x="995" y="254" class="body">• Sends alert notification</text>
+  <text x="995" y="286" class="body">• Tracks acknowledgement / close</text>
+
+  <path class="line" d="M430 205 C455 205 480 205 505 205"/>
+  <text x="467" y="178" text-anchor="middle" class="label">Risk trigger +</text>
+  <text x="467" y="197" text-anchor="middle" class="label">Wi-Fi CSI packets</text>
+
+  <path class="line" d="M895 205 C920 205 945 205 970 205"/>
+  <text x="932" y="188" text-anchor="middle" class="label">Confirmed</text>
+  <text x="932" y="207" text-anchor="middle" class="label">incident</text>
+
+  <path class="dash" d="M1165 355 C1165 405 700 410 700 355"/>
+  <text x="930" y="405" text-anchor="middle" class="label">ACK / close status</text>
+
+  <text x="700" y="425" text-anchor="middle" class="body">Ongoing prototype — architecture and implementation status are documented separately.</text>
+</svg>
