@@ -39,7 +39,7 @@ def render_section(title: str, rows: list[tuple[str, str]]) -> None:
 
 def acknowledge(incident_id: str) -> None:
     api_json(f"/api/v1/incidents/{quote(incident_id, safe='')}/acknowledge?operator=Local%20operator", method="POST")
-    st.toast("Incident acknowledged", icon="✓")
+    st.toast("Incident acknowledged", icon="✅")
 
 
 def event_description(item: dict) -> str:

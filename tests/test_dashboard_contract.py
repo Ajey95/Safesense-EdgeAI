@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from safesense.dashboard_view import build_dashboard_view, render_section_html
 
 
@@ -108,3 +110,8 @@ def test_dynamic_values_are_html_escaped_and_ui_has_no_internal_instructions():
     ).lower()
     for banned in ("system prompt", "internal instruction", "todo", "menuconfig", "credential"):
         assert banned not in visible
+
+
+def test_acknowledgement_toast_does_not_use_invalid_text_checkmark_icon():
+    source = Path("dashboard/app.py").read_text(encoding="utf-8")
+    assert 'icon="✓"' not in source
