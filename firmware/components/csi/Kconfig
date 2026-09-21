@@ -1,0 +1,10 @@
+menu "SafeSense CSI"
+
+config SAFESENSE_CSI_TFLM_MODEL
+    bool "Enable released WISDOM48 INT8 TFLite Micro model"
+    default n
+    help
+        Enable only after generating model/wisdom48_model_data.h and
+        model/wisdom48_normalization.h from a tested release manifest.
+
+endmenu

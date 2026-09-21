@@ -1,0 +1,11 @@
+menu "SafeSense CSI receiver network"
+
+config SAFESENSE_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config SAFESENSE_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+endmenu
