@@ -5,6 +5,14 @@ from html import escape
 UNAVAILABLE = "UNAVAILABLE"
 
 
+def incident_display(incidents: list[dict], limit: int = 3) -> tuple[list[dict], int]:
+    """Return the newest active incidents without turning the page into an alert log."""
+    if limit < 1:
+        raise ValueError("incident display limit must be positive")
+    active = [incident for incident in incidents if incident.get("state") == "NEW"]
+    return active[:limit], max(0, len(active) - limit)
+
+
 def tone(value: str) -> str:
     normalized = value.upper()
     if normalized in {"SAFE", "NORMAL", "GOOD", "ONLINE", "CONNECTED", "OK", "VALID / STABLE", "HOST VERIFIED", "LIVE"}:

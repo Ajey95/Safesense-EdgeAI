@@ -340,7 +340,7 @@ void app_main(void)
         return;
     }
     ESP_LOGI(TAG, "Restored %u persistent event(s)", delivery_queue_count(&delivery_queue));
-    if (wifi_station_start(CONFIG_SAFESENSE_WIFI_SSID, CONFIG_SAFESENSE_WIFI_PASSWORD, 30000u) != 0) {
+    if (safesense_wifi_station_start(CONFIG_SAFESENSE_WIFI_SSID, CONFIG_SAFESENSE_WIFI_PASSWORD, 30000u) != 0) {
         ESP_LOGE(TAG, "Node 1 SoftAP connection failed");
         return;
     }

@@ -4,19 +4,19 @@ This matrix maps every rubric mark to code, automated proof, and one concise dem
 
 | Rubric item | Status | Code and test evidence | Live review demonstration |
 |---|---|---|---|
-| Custom library implementation (5) | HOST VERIFIED; device pending | `firmware/components/bme680/`; `firmware/tests/test_bme680_driver.c` | Open register/calibration/compensation code; run C suite; when hardware arrives show chip ID `0x61`, live values, and disconnect error |
+| Custom library implementation (5) | HOST + TARGET BUILD VERIFIED; device pending | `firmware/components/bme680/`; `firmware/tests/test_bme680_driver.c`; Node 1 ESP-IDF 6.1 build | Open register/calibration/compensation code; run C suite; when hardware arrives show chip ID `0x61`, live values, and disconnect error |
 | Local database / persistence (5) | HOST VERIFIED; device pending | `firmware/components/delivery/`; `test_delivery_queue.c`; SQLite WAL/FULL persistence | Run queue tests; on hardware queue with broker offline, reboot, show restore, then ACK drain |
 | Edge analytics / ML preprocessing (5) | HOST VERIFIED; model release blocked | `firmware/components/csi/`; `test_csi_gas.c`; `tests/test_csi.py`; release helpers | Show rejected invalid frame, 48 amplitudes, and a `100 × 48` window; explain why the model returns `UNKNOWN` |
-| Communication pipeline (5) | HOST VERIFIED; device pending | Node protocol, MQTT bridge, exact ACK parser, API idempotency; protocol/ACK/API tests | Send simulator event, show SQLite/dashboard result and exact ACK; on hardware show MQTT retry after outage |
+| Communication pipeline (5) | HOST + TARGET BUILD VERIFIED; device pending | Node protocol, MQTT bridge, exact ACK parser, API idempotency; protocol/ACK/API tests; real local MQTT round trip | Publish an event, show SQLite/dashboard result and exact ACK; on hardware show MQTT retry after outage |
 | GUI / dashboard prototype (5) | HOST VERIFIED | `dashboard/app.py`, `dashboard_view.py`, `test_dashboard_contract.py`; browser QA | Open dashboard and walk Environment, CSI, Human Context, System, Review Evidence, Events, and acknowledgement |
 | Contribution, presentation, Q&A (25) | Materials ready; team action required | `review_demo.md`, `reviewer_qna.md`, this matrix | Each member truthfully names owned files, explains one design choice, and demonstrates one failure case |
 
 ## Review-safe claims
 
 - The BME680 driver and portable algorithms are independently implemented and host tested.
-- The two ESP32-S3 target applications are source complete.
+- The two ESP32-S3 target applications build successfully with ESP-IDF 6.1.
 - The dashboard/backend software path is live and testable using the simulator.
-- Hardware build, electrical behavior, CSI radio behavior, and reboot proof are pending until the boards are available.
+- Physical flashing, electrical behavior, CSI radio behavior, and reboot proof are pending until the boards are connected over USB.
 - The INT8 candidate exists but is not released; firmware correctly reports `UNKNOWN`.
 
 Do not claim BSEC IAQ, calibrated ppm, production safety certification, physical validation, or a released HAR model.

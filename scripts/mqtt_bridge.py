@@ -8,6 +8,10 @@ from safesense.mqtt_contract import build_application_ack
 
 API = os.getenv("SAFESENSE_API_URL", "http://127.0.0.1:8000")
 
+
+def broker_address() -> tuple[str, int]:
+    return os.environ["SAFESENSE_MQTT_BROKER"], int(os.getenv("SAFESENSE_MQTT_PORT", "1883"))
+
 def on_message(client, userdata, message):
     try:
         payload = json.loads(message.payload.decode())
@@ -23,11 +27,11 @@ def on_message(client, userdata, message):
         print(f"Rejected MQTT event: {error}")
 
 def run() -> None:
-    broker = os.environ["SAFESENSE_MQTT_BROKER"]
+    broker, port = broker_address()
     event_topic = os.getenv("SAFESENSE_MQTT_EVENT_TOPIC", "safesense/+/event")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
     client.on_message = on_message
-    client.connect(broker)
+    client.connect(broker, port=port)
     client.subscribe(event_topic, qos=1)
     client.loop_forever()
 

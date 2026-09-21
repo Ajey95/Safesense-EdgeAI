@@ -10,7 +10,7 @@ The dashboard is an operations view that doubles as the review evidence surface.
 - Incident acknowledgement is an explicit button with disabled completion state. It does not automatically resolve an incident.
 - Missing BME680 values render as `UNAVAILABLE`; zero is never substituted for a missing measurement and degraded data is never shown as safe.
 - The System card separates Node 1 and Node 2, and shows the actual LED/buzzer state, NVS queue depth, and CSI callback drops.
-- The Review Evidence card distinguishes host-verified software from the pending physical-device test. It does not claim an ESP-IDF build or hardware result that has not been observed.
+- The Review Evidence card distinguishes verified software from the pending physical-device test. It does not turn a successful ESP-IDF build into an unobserved hardware claim.
 - The TinyML release state remains visible. A rejected or absent candidate is shown as release-gated instead of being represented as a working activity model.
 - The Streamlit page uses semantic headings and native buttons. The design avoids tiny text, excessive decoration, automatic animation, and inaccessible color-only indicators.
 

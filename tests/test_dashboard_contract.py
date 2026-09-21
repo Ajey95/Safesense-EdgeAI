@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from safesense.dashboard_view import build_dashboard_view, render_section_html
+from safesense.dashboard_view import build_dashboard_view, incident_display, render_section_html
 
 
 def latest_payload():
@@ -115,6 +115,16 @@ def test_dynamic_values_are_html_escaped_and_ui_has_no_internal_instructions():
 def test_acknowledgement_toast_does_not_use_invalid_text_checkmark_icon():
     source = Path("dashboard/app.py").read_text(encoding="utf-8")
     assert 'icon="✓"' not in source
+
+
+def test_incident_display_is_bounded_and_reports_hidden_count():
+    incidents = [
+        {"incident_id": f"incident-{index}", "state": "NEW"}
+        for index in range(7)
+    ] + [{"incident_id": "acknowledged", "state": "ACKNOWLEDGED"}]
+    visible, hidden_count = incident_display(incidents, limit=3)
+    assert [item["incident_id"] for item in visible] == ["incident-0", "incident-1", "incident-2"]
+    assert hidden_count == 4
 
 
 def test_node2_payload_reports_queue_depth_after_persisting_current_event():

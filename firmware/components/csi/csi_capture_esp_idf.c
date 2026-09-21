@@ -17,7 +17,16 @@ static void csi_callback(void *context, wifi_csi_info_t *info) {
 int csi_capture_start(QueueHandle_t destination_queue) {
     if (!destination_queue) return -1;
     queue_handle = destination_queue; dropped_packets = 0u;
-    wifi_csi_config_t config = {.lltf_en = true, .htltf_en = false, .stbc_htltf_en = false, .ltf_merge_en = true, .channel_filter_en = false, .manu_scale = false, .shift = 0};
+    wifi_csi_config_t config = {
+        .lltf_en = true,
+        .htltf_en = false,
+        .stbc_htltf2_en = false,
+        .ltf_merge_en = true,
+        .channel_filter_en = false,
+        .manu_scale = false,
+        .shift = 0,
+        .dump_ack_en = false,
+    };
     if (esp_wifi_set_csi_config(&config) != ESP_OK) return -1;
     if (esp_wifi_set_csi_rx_cb(csi_callback, NULL) != ESP_OK) return -1;
     return esp_wifi_set_csi(true) == ESP_OK ? 0 : -1;

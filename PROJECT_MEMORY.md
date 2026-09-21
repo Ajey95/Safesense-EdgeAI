@@ -17,12 +17,14 @@ The project targets exactly one BME680, two ESP32-S3 boards, resistors, LEDs, an
 - Records are persisted before publish and removed only by an exact accepted ACK for the same ID.
 - The current INT8 candidate is release blocked; default firmware inference returns `UNKNOWN`.
 
-## Verification snapshot — 2026-09-21
+## Verification snapshot — 2026-09-22
 
-- Python: 21 tests passing.
+- Python: 23 tests passing.
 - Portable C: 7 suites passing.
-- Dashboard: desktop/narrow and dark/light inspected; incident acknowledgement works; console clean.
-- Target ESP-IDF compilation and physical device validation remain pending because the toolchain/hardware are unavailable.
+- Target builds: Node 1 and Node 2 compile for `esp32s3` with ESP-IDF 6.1; images are 781,520 and 899,840 bytes respectively.
+- MQTT: local broker on port 1884 completed publish → bridge → API/SQLite → exact `ACCEPTED` ACK.
+- Dashboard: live page inspected; unavailable CSI/model evidence is shown explicitly and no internal instructions are displayed.
+- Physical flashing and device validation remain pending because no ESP32-S3 serial port is currently detected.
 
 ## Reviewer entry points
 

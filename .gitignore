@@ -4,6 +4,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 data/*.db
+data/*.db-*
 data/public/
 data/cache/
 data/review-qa/
@@ -14,6 +15,7 @@ firmware/components/csi/model/wisdom48_normalization.h
 firmware/**/sdkconfig
 firmware/**/sdkconfig.old
 firmware/**/build/
+firmware/**/managed_components/
 node_modules/
 firmware/tests/bme680_driver_test.exe
 firmware/tests/gas_risk_test.exe

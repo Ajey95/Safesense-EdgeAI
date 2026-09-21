@@ -43,5 +43,5 @@
   <path class="line" d="M680 198H755"/><text x="718" y="167" text-anchor="middle" class="label">UDP env</text><text x="718" y="186" text-anchor="middle" class="label">+ CSI probes</text>
   <path class="line" d="M1145 198H1215"/><text x="1180" y="184" text-anchor="middle" class="label">MQTT</text>
   <path class="return" d="M1310 358C1310 440 950 450 950 358"/><text x="1130" y="446" text-anchor="middle" class="label">Exact ACCEPTED ACK for same event_id</text>
-  <text x="720" y="495" text-anchor="middle" class="body">Host-verified software; ESP-IDF compilation and physical electrical/radio evidence remain pending.</text>
+  <text x="720" y="495" text-anchor="middle" class="body">Host and ESP-IDF builds verified; physical electrical/radio evidence remains pending.</text>
 </svg>

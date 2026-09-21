@@ -93,11 +93,11 @@ Point out `PENDING DEVICE TEST`. The dashboard intentionally contains operationa
 
 ### 7. Close — 30 seconds
 
-Summarize what is host verified and what must wait for the hardware: ESP-IDF compilation, real readings, CSI capture, GPIO polarity, physical reset persistence, broker delivery, and target-room model evidence.
+Summarize what is host and target-build verified and what must wait for the hardware: flashing, real readings, CSI capture, GPIO polarity, physical reset persistence, board-to-broker delivery, and target-room model evidence.
 
 ## Physical acceptance checklist
 
-- [ ] Record ESP-IDF version and successful builds of both applications.
+- [x] Record ESP-IDF 6.1 and successful `esp32s3` builds of both applications.
 - [ ] Show both ESP32-S3 boards and BME680 in one uninterrupted demo.
 - [ ] Verify chip ID, stable readings, gas-valid/heater-stable flags, and disconnect handling.
 - [ ] Verify UDP rate/CRC and real CSI window formation.

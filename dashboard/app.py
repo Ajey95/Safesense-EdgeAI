@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 import streamlit as st
 
-from safesense.dashboard_view import build_dashboard_view, render_section_html, tone
+from safesense.dashboard_view import build_dashboard_view, incident_display, render_section_html, tone
 
 API_URL = os.getenv("SAFESENSE_API_URL", "http://127.0.0.1:8000").rstrip("/")
 REFRESH_SECONDS = 3
@@ -109,9 +109,11 @@ def live_workspace() -> None:
             st.line_chart({"Amplitude": values}, height=240, use_container_width=True)
             st.caption(f"{csi.get('window_frames', '—')} frames · {csi.get('selected_subcarriers', '—')} subcarriers · {csi.get('model_version') or csi.get('model_release_state', 'Model unavailable')}")
 
-    active_incidents = [incident for incident in incidents if incident.get("state") == "NEW"]
+    active_incidents, hidden_incident_count = incident_display(incidents)
     if active_incidents:
         st.subheader("Active incidents")
+        if hidden_incident_count:
+            st.caption(f"Showing the newest {len(active_incidents)}; {hidden_incident_count} more active incident(s) remain in the event store.")
         for incident in active_incidents:
             title, action = st.columns((4, 1))
             with title:

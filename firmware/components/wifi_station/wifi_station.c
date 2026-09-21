@@ -22,7 +22,7 @@ static void network_event(void *arg, esp_event_base_t base, int32_t id, void *da
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) xEventGroupSetBits(connection_events, CONNECTED_BIT);
 }
 
-int wifi_station_start(const char *ssid, const char *password, uint32_t timeout_ms) {
+int safesense_wifi_station_start(const char *ssid, const char *password, uint32_t timeout_ms) {
     if (!ssid || !ssid[0] || !password || !timeout_ms || strlen(ssid) > 32 || strlen(password) > 64) return -1;
     const esp_err_t netif = esp_netif_init();
     if (netif != ESP_OK && netif != ESP_ERR_INVALID_STATE) return -1;

@@ -76,7 +76,7 @@ Dynamic labels are validated or HTML-escaped. A contract test requires all rubri
 
 **What is complete today?**
 
-Portable firmware logic, two target application sources, backend, persistence contract, simulator, dashboard, and automated tests are complete. ESP-IDF builds and physical electrical/radio/reboot proof wait for the actual hardware and toolchain.
+Portable firmware logic, both ESP32-S3 target builds, backend, persistence contract, simulator, dashboard, and automated tests are complete. Physical flashing plus electrical, radio, and reboot proof wait for the boards to be connected.
 
 **Is this production ready?**
 
