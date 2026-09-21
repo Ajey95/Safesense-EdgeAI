@@ -18,6 +18,7 @@ node_modules/
 firmware/tests/bme680_driver_test.exe
 firmware/tests/gas_risk_test.exe
 firmware/tests/node_protocol_test.exe
+firmware/tests/safety_output_test.exe
 firmware/tests/test_bme680_driver.exe
 firmware/tests/test_bme280_driver.exe
 firmware/tests/test_fusion_engine.exe
