@@ -1,6 +1,6 @@
 # Dashboard UX Decisions
 
-The dashboard is intentionally an operations view, not a presentation screen. It puts the fused safety state first, then shows the evidence an operator needs to interpret it: activity/CSI quality, environment, CSI profile, device health, and the incident queue.
+The dashboard is an operations view that doubles as the review evidence surface. It puts the fused safety state first, then shows the BME680, CSI, two-node, output, persistence, and model-release evidence needed to explain the prototype.
 
 ## Applied decisions
 
@@ -8,6 +8,10 @@ The dashboard is intentionally an operations view, not a presentation screen. It
 - The layout keeps the most safety-relevant information above the fold and groups supporting diagnostics beneath it.
 - Values update from a bounded local-demo refresh interval; an unavailable API is shown as an explicit error state rather than a blank dashboard.
 - Incident acknowledgement is an explicit button with disabled completion state. It does not automatically resolve an incident.
+- Missing BME680 values render as `UNAVAILABLE`; zero is never substituted for a missing measurement and degraded data is never shown as safe.
+- The System card separates Node 1 and Node 2, and shows the actual LED/buzzer state, NVS queue depth, and CSI callback drops.
+- The Review Evidence card distinguishes host-verified software from the pending physical-device test. It does not claim an ESP-IDF build or hardware result that has not been observed.
+- The TinyML release state remains visible. A rejected or absent candidate is shown as release-gated instead of being represented as a working activity model.
 - The Streamlit page uses semantic headings and native buttons. The design avoids tiny text, excessive decoration, automatic animation, and inaccessible color-only indicators.
 
 ## References
