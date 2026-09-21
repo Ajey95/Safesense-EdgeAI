@@ -1,0 +1,92 @@
+menu "SafeSense Node 2"
+
+config SAFESENSE_WIFI_SSID
+    string "Node 1 SoftAP SSID"
+    default "SafeSense-V2"
+
+config SAFESENSE_WIFI_PASSWORD
+    string "Node 1 SoftAP password (empty for open lab network)"
+    default ""
+
+config SAFESENSE_NODE1_IP
+    string "Node 1 SoftAP address"
+    default "192.168.4.1"
+
+config SAFESENSE_REGISTRATION_PORT
+    int "Node 1 registration UDP port"
+    range 1024 65535
+    default 3334
+
+config SAFESENSE_PROBE_PORT
+    int "CSI probe UDP port"
+    range 1024 65535
+    default 3333
+
+config SAFESENSE_SENSOR_MAX_AGE_MS
+    int "Maximum environmental sample age (ms)"
+    range 100 60000
+    default 10000
+
+config SAFESENSE_CSI_MAX_AGE_MS
+    int "Maximum CSI frame age (ms)"
+    range 100 10000
+    default 1000
+
+config SAFESENSE_CSI_MIN_CONFIDENCE_PERCENT
+    int "Minimum released-model confidence (percent)"
+    range 1 100
+    default 70
+
+config SAFESENSE_MQTT_BROKER_URI
+    string "Laptop MQTT broker URI"
+    default "mqtt://192.168.4.2"
+
+config SAFESENSE_DEVICE_ID
+    string "Gateway device ID"
+    default "esp32s3-node2"
+
+config SAFESENSE_MQTT_EVENT_TOPIC
+    string "Telemetry event topic"
+    default "safesense/esp32s3-node2/event"
+
+config SAFESENSE_MQTT_ACK_TOPIC
+    string "Application acknowledgement topic"
+    default "safesense/esp32s3-node2/ack"
+
+config SAFESENSE_GREEN_LED_GPIO
+    int "Green LED GPIO"
+    default 4
+
+config SAFESENSE_YELLOW_LED_GPIO
+    int "Yellow LED GPIO"
+    default 5
+
+config SAFESENSE_RED_LED_GPIO
+    int "Red LED GPIO"
+    default 6
+
+config SAFESENSE_BUZZER_GPIO
+    int "Buzzer GPIO"
+    default 7
+
+config SAFESENSE_LEDS_ACTIVE_HIGH
+    bool "LEDs are active high"
+    default y
+
+config SAFESENSE_BUZZER_ACTIVE_HIGH
+    bool "Buzzer is active high"
+    default y
+
+choice SAFESENSE_BUZZER_TYPE
+    prompt "Buzzer type"
+    default SAFESENSE_BUZZER_ACTIVE
+
+config SAFESENSE_BUZZER_ACTIVE
+    bool "Active buzzer"
+
+config SAFESENSE_BUZZER_PASSIVE
+    bool "Passive buzzer"
+
+endchoice
+
+endmenu

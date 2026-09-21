@@ -1,7 +1,7 @@
 #include "delivery_mqtt.h"
+#include "delivery_ack.h"
 #include <stdio.h>
 #include <string.h>
-#include "cJSON.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "mqtt_client.h"
@@ -13,16 +13,6 @@ static void flush_one(void) {
     delivery_record_t record; if (delivery_queue_peek(pending_queue, &record) != 0) return;
     if (esp_mqtt_client_publish(client, event_topic, record.payload, 0, 1, 0) < 0) ESP_LOGW(TAG, "Publish deferred; event remains in NVS");
 }
-static bool ack_matches(const char *data, size_t length, const char *event_id) {
-    cJSON *document = cJSON_ParseWithLength(data, length);
-    if (!document) return false;
-    const cJSON *ack_event_id = cJSON_GetObjectItemCaseSensitive(document, "event_id");
-    const cJSON *status = cJSON_GetObjectItemCaseSensitive(document, "status");
-    const bool matches = cJSON_IsString(ack_event_id) && cJSON_IsString(status) &&
-        strcmp(ack_event_id->valuestring, event_id) == 0 && strcmp(status->valuestring, "ACCEPTED") == 0;
-    cJSON_Delete(document);
-    return matches;
-}
 static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data) {
     (void)arg; (void)base; esp_mqtt_event_handle_t event = data;
     if (id == MQTT_EVENT_CONNECTED) { connected = true; esp_mqtt_client_subscribe(client, ack_topic, 1); flush_one(); return; }
@@ -31,11 +21,19 @@ static void mqtt_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (event->current_data_offset != 0 || event->data_len != event->total_data_len) return;
     delivery_record_t record; if (delivery_queue_peek(pending_queue, &record) != 0) return;
     /* Only an exact, successful application ACK may remove persistent data. */
-    if (ack_matches(event->data, event->data_len, record.event_id)) { (void)delivery_queue_ack_head(pending_queue, record.event_id); flush_one(); }
+    if (delivery_ack_matches(event->data, event->data_len, record.event_id)) { (void)delivery_queue_ack_head(pending_queue, record.event_id); flush_one(); }
 }
 int delivery_mqtt_start(const delivery_mqtt_config_t *config) {
     if (!config || !config->broker_uri || !config->device_id || !config->queue) return -1;
-    pending_queue = config->queue; connected = false; snprintf(event_topic, sizeof(event_topic), "safesense/%s/event", config->device_id); snprintf(ack_topic, sizeof(ack_topic), "safesense/%s/ack", config->device_id);
+    pending_queue = config->queue; connected = false;
+    const int event_length = config->event_topic && config->event_topic[0]
+                                 ? snprintf(event_topic, sizeof(event_topic), "%s", config->event_topic)
+                                 : snprintf(event_topic, sizeof(event_topic), "safesense/%s/event", config->device_id);
+    const int ack_length = config->ack_topic && config->ack_topic[0]
+                               ? snprintf(ack_topic, sizeof(ack_topic), "%s", config->ack_topic)
+                               : snprintf(ack_topic, sizeof(ack_topic), "safesense/%s/ack", config->device_id);
+    if (event_length <= 0 || event_length >= (int)sizeof(event_topic) ||
+        ack_length <= 0 || ack_length >= (int)sizeof(ack_topic)) return -1;
     esp_mqtt_client_config_t settings = {.broker.address.uri = config->broker_uri, .broker.verification.certificate = config->server_certificate};
     client = esp_mqtt_client_init(&settings); if (!client) return -1;
     if (esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event, NULL) != ESP_OK) return -1;
