@@ -1,99 +1,49 @@
-# SafeSense Architecture
+# SafeSense two-node architecture
 
-> This document describes the target two-node architecture retained from the repository's original design. See [progress.md](progress.md) for the current implementation and validation status.
-
-SafeSense is designed as a **risk-triggered Edge AI pipeline** with two ESP32 edge nodes and a lightweight cloud incident layer.
-
-## System diagram
+This is the implemented software topology for the available parts: one BME680, two ESP32-S3 boards, resistors, LEDs, and a buzzer.
 
 ![SafeSense architecture](architecture.svg)
 
-## Component responsibilities
+## Node 1 — BME680 sensor and CSI stimulus
 
-### Edge Node 1 — ESP32 Sensor + Wi-Fi TX
+Node 1 hosts the custom BME680 I2C driver and creates the `SafeSense-V2` SoftAP. After Node 2 registers, Node 1 samples temperature, humidity, pressure, and gas resistance; updates a relative clean-air baseline; classifies environmental risk; and sends a fixed 50-byte big-endian UDP snapshot with protocol version, sequence, flags, monotonic sample age, and CRC32. The 50 Hz traffic also supplies controlled CSI stimulus.
 
-This node is responsible for environmental sensing and the first deterministic risk gate.
+The sensor LED means the current BME680 reading passed its validity checks. Warm-up, invalid heater/gas flags, I2C failure, and stale measurements remain explicitly unavailable or degraded.
 
-- Reads environmental sensors such as gas, temperature, humidity and pressure.
-- Validates/samples the readings for the risk engine.
-- Applies threshold-based danger screening.
-- Keeps the Wi-Fi link available and sends probing traffic used by the receiver for CSI/RSSI observations.
-- Sends a risk trigger toward Edge Node 2 when the environmental path requires presence/activity confirmation.
+## Node 2 — CSI, fusion, outputs, persistence, and MQTT
 
-### Edge Node 2 — ESP32 Wi-Fi RX + TinyML
+Node 2 joins the SoftAP, registers with Node 1, validates the packet contract, and enables ESP32-S3 CSI reception. The Wi-Fi callback only copies a fixed-size packet into a FreeRTOS queue. Lower-priority processing rejects invalid frames, converts interleaved I/Q to amplitude, retains 48 data carriers, and assembles 100-frame windows.
 
-This node performs the radio-feature and AI side of the edge decision.
+The default model adapter returns `UNKNOWN`: only a model with a passing release manifest may replace it. Deterministic fusion still handles sensor risk and health. Critical environmental risk produces `INCIDENT` regardless of CSI; warning produces `WARNING`; stale/unhealthy evidence produces `DEGRADED`; only healthy non-risk evidence produces `NORMAL`.
 
-- Receives Wi-Fi packets from the transmitter node.
-- Captures/derives CSI and/or RSSI feature windows supported by the experimental setup.
-- Preprocesses the radio features for the TinyML model.
-- Runs presence/activity inference when the risk path is triggered.
-- Returns a confidence-bearing inference result.
-- Fuses the environmental risk state with presence/activity evidence before creating a confirmed incident candidate.
+Node 2 maps the fused state to green/yellow/red LEDs and the buzzer. Each transition is written to a bounded NVS queue before MQTT QoS 1 publication. The record remains until the laptop returns an exact JSON ACK containing the same `event_id` and status `ACCEPTED`.
 
-### Cloud Layer — Incident Monitoring
+## Laptop review station
 
-The cloud/backend layer is intentionally downstream of the edge decision.
+The laptop joins the Node 1 SoftAP and runs the MQTT broker, bridge, FastAPI service, SQLite database, and Streamlit dashboard. The API validates and timestamps telemetry, deduplicates `event_id`, stores the event durably, performs an independent server-side fusion check, exposes incidents, and returns the application ACK.
 
-- Receives a structured confirmed-incident JSON event.
-- Validates and stores the incident record.
-- Applies incident deduplication/lifecycle handling.
-- Exposes status to a dashboard.
-- Sends the configured alert notification.
-- Tracks acknowledgement and closure state.
+## Data path
 
-## Data flow
-
-```mermaid
-sequenceDiagram
-    participant S as Environmental Sensors
-    participant E1 as ESP32 Edge Node 1
-    participant E2 as ESP32 Edge Node 2
-    participant B as Backend / Incident Layer
-    participant R as Responder
-
-    S->>E1: Environmental readings
-    E1->>E1: Validate + threshold risk screening
-    E1->>E2: Wi-Fi probing packets / CSI observations
-    alt meaningful risk condition
-        E1->>E2: Risk trigger
-        E2->>E2: CSI/RSSI preprocessing
-        E2->>E2: TinyML presence/activity inference
-        E2->>E2: Edge fusion decision
-        alt incident confirmed
-            E2->>B: Confirmed incident JSON
-            B->>B: Validate + persist + deduplicate
-            B->>R: Alert / incident details
-            R->>B: Acknowledge / close
-            B-->>E2: ACK / close status (where required)
-        end
-    end
+```text
+BME680 -I2C-> Node 1 ESP32-S3 -UDP probes + environment-> Node 2 ESP32-S3
+                                                         |
+                                         CSI window + deterministic fusion
+                                         LEDs/buzzer + NVS queue
+                                                         | MQTT QoS 1
+                                                         v
+                                             Laptop broker -> FastAPI -> SQLite
+                                                         | exact ACK
+                                                         +----------> Node 2
+                                             Streamlit reads the local API
 ```
 
-## Design intent
+## Failure boundaries
 
-The project is exploring an architecture in which **raw sensing stays as local as practical** and cloud communication is reserved for structured incident information. This is intended to reduce unnecessary network traffic, avoid camera-based presence sensing, and keep the hazard-to-confirmation path available even when cloud connectivity is imperfect.
+- Sensor invalid/stale: `DEGRADED`; never silently normal.
+- CSI stale, low confidence, or model disabled: human context `UNKNOWN` and overall `DEGRADED`, unless environmental risk is warning/critical.
+- Critical environment plus missing CSI: still `INCIDENT`.
+- Broker offline: records remain in the 16-slot NVS queue and retry later.
+- Queue full or corrupt metadata: visible failure; software does not silently erase evidence.
+- Laptop offline: local LEDs/buzzer and fusion continue, while telemetry queues.
 
-## Communication model
-
-Planned device-to-backend interfaces use **MQTT and/or HTTP over a local/IP network**, with structured JSON events. Short backend outages should be handled with bounded buffering/retry rather than losing every event or creating duplicate alert storms.
-
-Example incident shape (illustrative contract, not a finalized production schema):
-
-```json
-{
-  "areaId": "chem-lab-2",
-  "timestamp": "2026-08-28T12:00:00Z",
-  "environmentRisk": "CRITICAL",
-  "presence": {
-    "detected": true,
-    "activity": "walking",
-    "confidence": 0.94
-  },
-  "decision": "CONFIRMED_INCIDENT"
-}
-```
-
-## Reliability / safety boundaries
-
-SafeSense is an ongoing student prototype. The design therefore separates deterministic environmental screening from probabilistic TinyML inference and treats the model as **supporting evidence**, not as a certified safety authority. Sensor calibration, CSI feature robustness, model accuracy, false-positive/false-negative rates and alert behaviour require controlled validation before any safety-critical deployment.
+Host-verification is complete. Target ESP32-S3 compilation and every electrical/radio behavior still require physical acceptance.

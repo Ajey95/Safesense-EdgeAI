@@ -50,7 +50,7 @@ test: bme680_driver_test gas_risk_test node_protocol_test safety_output_test del
 
 clean:
 ifeq ($(OS),Windows_NT)
-	cmd /C "del /Q bme680_driver_test.exe gas_risk_test.exe node_protocol_test.exe safety_output_test.exe delivery_queue_test.exe test_bme680_driver.exe test_bme280_driver.exe test_fusion_engine.exe test_csi_gas.exe 2>NUL || exit /B 0"
+	cmd /C "del /Q bme680_driver_test.exe gas_risk_test.exe node_protocol_test.exe safety_output_test.exe delivery_queue_test.exe test_bme680_driver.exe test_fusion_engine.exe test_csi_gas.exe 2>NUL || exit /B 0"
 else
 	$(RM) bme680_driver_test gas_risk_test node_protocol_test safety_output_test delivery_queue_test test_bme680_driver test_fusion_engine test_csi_gas
 endif

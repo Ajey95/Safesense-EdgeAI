@@ -1,32 +1,33 @@
-# SafeSense Fusion Design
+# Deterministic safety fusion
 
-## Purpose
+Fusion is a safety policy, not another ML model. It combines BME680-derived environmental risk, evidence freshness, and CSI activity context into an explainable state.
 
-The fusion layer is a deterministic safety policy, not a second classifier. It combines an already-classified environmental risk with CSI activity context and component health. Its output must be explainable on the dashboard and reproducible during review.
+## Environmental evidence
 
-## Evidence and boundary
+The BME680 measures temperature, humidity, pressure, and gas resistance. It does not directly report a certified gas type, concentration, or BSEC IAQ score. SafeSense compares gas resistance with a warmed EMA clean-air baseline:
 
-- The BME280 measures temperature, humidity, and pressure. It is not a gas sensor. Environmental danger therefore enters this engine as a risk already determined by a separately calibrated gas/smoke sensor or controlled simulator input. Temperature or humidity thresholds are deliberately not invented in fusion code.
-- ESP-IDF states that the CSI callback runs from the Wi-Fi task and should hand data to a queue for lower-priority work. CSI freshness and model confidence are therefore inputs to fusion, not assumptions.
-- The fusion layer does not label `UNKNOWN` as `VACANT`. Missing, stale, or low-confidence CSI becomes `DEGRADED` human context.
+- ratio above 0.75: `NORMAL`
+- ratio at or below 0.75: `WARNING`
+- ratio at or below 0.50: `CRITICAL`
+
+These are conservative software defaults, not universal safety limits. Baseline updates occur only for valid normal samples, preventing a hazardous sample from dragging the reference downward. Target-room calibration remains mandatory.
 
 ## Decision table
 
-| Priority | Conditions | State | Action |
+| Priority | Condition | Fused state | Local action |
 |---|---|---|---|
-| 1 | Environmental risk is `CRITICAL` | `INCIDENT` | Local alarm, persist event, publish incident |
-| 2 | Environmental risk is `WARNING` | `WARNING` | Persist warning transition, publish state |
-| 3 | Environmental sensor is unhealthy/stale | `DEGRADED` | Publish health fault; do not fabricate a safe state |
-| 4 | CSI stale, `UNKNOWN`, or confidence below policy | `DEGRADED` | Publish CSI fault; activity remains unknown |
-| 5 | Otherwise | `NORMAL` | Publish normal state |
+| 1 | Environmental risk `CRITICAL` | `INCIDENT` | Red LED, buzzer, persist/publish |
+| 2 | Environmental risk `WARNING` | `WARNING` | Yellow LED, warning cadence, persist/publish |
+| 3 | Sensor unhealthy/stale/unavailable | `DEGRADED` | Yellow degraded pattern, publish fault |
+| 4 | CSI stale, `UNKNOWN`, or below confidence | `DEGRADED` | Activity stays unknown; publish fault |
+| 5 | Healthy, fresh, no risk | `NORMAL` | Green LED |
 
-Environmental criticality is evaluated before CSI availability. Thus a lost CSI link can never suppress a real environmental incident. The transition tracker emits a persistence action only when the fusion state changes; it prevents repeated samples from creating duplicate events. Incident resolution is intentionally an explicit operator/backend action, not an automatic clear.
+`UNKNOWN != VACANT`. CSI can add human context, but it cannot veto a critical environmental reading. Invalid enum values also map to the degraded output pattern rather than creating false safe or incident claims.
 
-## Configuration
+## TinyML boundary
 
-`minimum_csi_confidence` defaults to 0.70 only as a software policy seed. It must be tuned against held-out, local-room validation data before demo claims. Environmental thresholds/calibration belong to the particular gas/smoke sensor module and its datasheet, not this generic fusion layer.
+The CSI interface accepts exactly a `100 × 48` amplitude window. Firmware contains a guarded model adapter, but its default implementation returns `UNKNOWN`. The existing INT8 candidate failed the unseen-room macro-F1 release gate, so it is not enabled. A future model must pass leakage checks, held-out target-room evaluation, full-INT8 conversion checks, memory/latency checks, and a signed release manifest before firmware inclusion.
 
-## Sources
+## Verification boundary
 
-- Bosch Sensortec, BME280 product page and datasheet: temperature, humidity, pressure capabilities and operating ranges.
-- Espressif, ESP-IDF Wi-Fi CSI documentation: callback setup and queue-offloading guidance.
+Portable C and Python tests verify decision priority and failure states. Real BME680 calibration, CSI generalization, LED/buzzer polarity, and timing need the two physical ESP32-S3 boards.

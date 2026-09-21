@@ -1,10 +1,13 @@
-# Device Delivery and Environmental Risk
+# Device persistence and delivery
 
-## Delivery path
+## Owner and data path
 
-Telemetry is serialized with a stable `event_id`, committed to the bounded NVS queue, published at MQTT QoS 1, and retained until a valid JSON ACK names that exact ID with status `ACCEPTED` on the device-specific ACK topic. A successful MQTT publish by itself does not remove the event. Substring matches and malformed ACKs are rejected.
+Node 2 owns durable delivery. A fusion transition receives a stable `event_id`, is serialized, and is committed to the 16-record NVS ring before any network publish. The 64 KiB NVS partition accommodates sixteen 1536-byte payload records plus metadata/page overhead.
 
-`firmware/components/delivery` is designed for low-frequency incidents and state transitions. It must not be used to write raw CSI frames: NVS is suited to bounded key-value state, not high-rate logging.
+```text
+fusion transition -> NVS record -> MQTT QoS 1 -> bridge -> FastAPI/SQLite
+       retained until exact {"event_id":"...","status":"ACCEPTED"} ACK
+```
 
 Topics:
 
@@ -13,14 +16,16 @@ safesense/{device_id}/event
 safesense/{device_id}/ack
 ```
 
-`scripts/mqtt_bridge.py` is the backend-side bridge. Configure the broker via `SAFESENSE_MQTT_BROKER`; do not commit a broker credential or certificate.
+MQTT QoS 1 proves delivery to the broker, not durable backend acceptance. The queue advances only when the JSON ACK is complete, names the current head record exactly, and has status `ACCEPTED`. Malformed, fragmented, mismatched, duplicate, and negative ACKs do not remove data. The API also enforces idempotency on `event_id`, making safe redelivery possible.
 
-`firmware/environmental_node` wires the complete review path: custom BME280 driver → JSON serialization → NVS queue → MQTT. At boot it logs how many records were restored. For the persistence demonstration, stop the broker, wait for `Persisted reading`, reset the board, and show `Restored 1 pending telemetry record(s) from NVS`; reconnect the broker and show the backend ACK draining the record.
+Raw CSI is never written to NVS. Only low-frequency state transitions are persisted, limiting flash wear.
 
-## Environmental-risk source
+## Review demonstration
 
-The custom BME280 driver measures temperature, humidity, and pressure. The added `gas_risk` component is a calibrated analog-sensor policy: it evaluates a signal relative to a stored baseline and warning/critical ratios. Until the actual gas/smoke module, board pin, warm-up procedure, and calibration values are chosen and measured, its output is deliberately `UNAVAILABLE`; it does not make fictional safety claims.
+1. Start Node 2 with the broker offline and cause one transition.
+2. Show the queue depth increase and `Persisted` log.
+3. Reset Node 2 and show `Restored 1 persistent event(s)`.
+4. Start the broker, bridge, and API.
+5. Show the matching event and exact ACK, then show queue depth return to zero.
 
-## Model boundary
-
-`csi_pipeline` creates deterministic 100 x 48 windows. The model call is intentionally deferred until the trained and quantified INT8 artifact from the separate model-training task exists. Until then the application must publish activity `UNKNOWN`, not a fabricated class.
+This sequence is host-tested through a portable storage adapter. The same-board reboot and real NVS/MQTT sequence remains a physical-device acceptance gate.

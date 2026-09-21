@@ -1,33 +1,37 @@
-# SafeSense Implementation Progress
+# SafeSense implementation status
 
-This page separates host-verified software from physical-hardware and model-release evidence.
+Status words are deliberate:
 
-| Area | Status | Evidence / remaining gate |
+- **HOST VERIFIED:** portable logic or local service is covered by passing host tests.
+- **SOURCE COMPLETE:** target source exists, but the ESP-IDF toolchain was not available for compilation.
+- **PENDING DEVICE TEST:** electrical, radio, flash, reboot, or timing behavior needs the actual boards.
+- **RELEASE BLOCKED:** an artifact exists but does not meet its evidence threshold.
+
+| Area | Status | Evidence and remaining gate |
 |---|---|---|
-| System architecture | Implemented | Two ESP32 applications, reusable edge components, local backend and dashboard are present. |
-| Custom environmental driver | Host verified | Register-level BME280 driver passes a Bosch reference-vector test; physical sensor acceptance remains. |
-| Local flash persistence | Implemented | NVS queue restores pending records and removes them only after application ACK; physical reboot demonstration remains. |
-| CSI TX/RX path | Implemented | Reconnecting Wi-Fi station, controlled UDP transmitter, non-blocking CSI callback and queue exist; physical radio validation remains. |
-| CSI preprocessing | Host verified | Invalid-first-word rejection, I/Q amplitude, 48-carrier physical order and 100-frame windows are tested. |
-| TinyML model pipeline | Implemented but release rejected | Full INT8 candidate is 6,464 bytes, but unseen-room macro-F1 is 0.326 versus the 0.80 release gate. Target-room data is required. |
-| Fusion | Host verified | C and Python implementations fail closed; critical environmental risk cannot be vetoed by uncertain CSI. |
-| MQTT delivery | Implemented | Persistent JSON, QoS 1, exact application ACK and retry behavior are wired; broker/device integration remains to be demonstrated physically. |
-| Backend lifecycle | Host verified | Pydantic validation, idempotent ingestion, SQLite persistence, incidents, acknowledgement and WebSocket fan-out are tested. |
-| Dashboard | Verified locally | Streamlit displays all rubric-facing telemetry and system states with honest unavailable/unknown values. |
-| Controlled end-to-end validation | Pending hardware | Requires ESP-IDF build, flashing, BME280 measurements, reset persistence, CSI capture, MQTT delivery and target-room testing. |
+| Custom BME680 library | HOST VERIFIED / SOURCE COMPLETE | Register protocol, `0x61` chip ID, calibration, compensation, heater maths, forced-mode adapter; physical reading accuracy pending |
+| Relative gas policy | HOST VERIFIED | Warm-up, validity, EMA baseline, warning/critical ratios; target-room calibration pending |
+| Node protocol | HOST VERIFIED | Fixed 50-byte big-endian packet, CRC32, version, sequence, freshness; real packet-loss/radio check pending |
+| CSI preprocessing | HOST VERIFIED / SOURCE COMPLETE | Invalid-frame rejection, I/Q amplitude, 48 carriers, 100 frames; physical ESP32-S3 CSI pending |
+| TinyML | RELEASE BLOCKED | Full-INT8 tooling and guarded runtime exist; candidate macro-F1 0.326 is below the 0.80 gate |
+| Fusion and outputs | HOST VERIFIED / SOURCE COMPLETE | Critical precedence, `UNKNOWN != VACANT`, LED/buzzer mapping; GPIO polarity/timing pending |
+| NVS persistence | HOST VERIFIED / SOURCE COMPLETE | Portable reboot/duplicate/full/corrupt-store tests and ESP-IDF NVS adapter; physical reset pending |
+| MQTT reliability | HOST VERIFIED / SOURCE COMPLETE | Exact ACK parser and API/bridge contract; physical broker integration pending |
+| Backend/SQLite | HOST VERIFIED | Validation, idempotency, WAL/FULL sync, incidents, acknowledgement |
+| Dashboard | HOST VERIFIED | Contract tests plus dark/light desktop and 390 × 844 visual inspection; live hardware feed pending |
 
-## Current proof
+## Current automated proof
 
-- Thirteen Python tests and three portable C suites pass.
-- Generated databases, datasets, model candidates, firmware builds and credentials are excluded from Git.
-- The public-data model is retained only as an evaluated candidate and is not packaged into firmware.
-- Review evidence, demo sequence and Q&A are documented in [review_readiness.md](review_readiness.md).
+- 19 Python tests pass.
+- 7 portable C suites pass.
+- Python source bytecode compilation passes.
+- Dashboard interaction, narrow/desktop layout, light/dark themes, and console output were inspected in a real browser.
 
-## Next physical milestones
+## Remaining physical acceptance
 
-1. Install ESP-IDF and compile all three firmware applications.
-2. Validate BME280 chip ID, readings and disconnect behavior on the chosen board.
-3. Demonstrate NVS persistence across a physical reset with the broker offline.
-4. Capture MQTT publish, backend acceptance, exact ACK and queue drain.
-5. Validate CSI capture from the fixed TX/RX geometry.
-6. Collect a trace-separated target-room dataset and retrain before enabling TFLite Micro.
+1. Install a supported ESP-IDF version and compile both `esp32s3` applications.
+2. Flash both boards and verify BME680 address, chip ID, readings, heater flags, and disconnect state.
+3. Confirm Node 1 UDP rate/CRC and Node 2 physical CSI windows.
+4. Confirm green/yellow/red LED polarity and active/passive buzzer configuration.
+5. Demonstrate queued event survival across a physical reset and exact ACK drain through the broker.
+6. Collect target-room CSI and pass the model release gate before enabling INT8 inference.
