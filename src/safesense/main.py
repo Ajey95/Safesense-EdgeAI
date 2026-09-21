@@ -40,8 +40,10 @@ def health() -> dict:
 async def ingest(telemetry: TelemetryIn, session: Session = Depends(get_session)) -> dict:
     existing = session.scalar(select(TelemetryEvent).where(TelemetryEvent.event_id == telemetry.event_id))
     if existing:
+        if existing.device_id != telemetry.device_id:
+            raise HTTPException(status_code=409, detail="Event ID belongs to another device")
         incident_id = str(uuid5(NAMESPACE_URL, f"{telemetry.device_id}:{telemetry.event_id}")) if existing.fusion_state in {"INCIDENT", "CRITICAL"} else None
-        return {"accepted": True, "duplicate": True, "fusion_state": existing.fusion_state, "incident_id": incident_id}
+        return {"accepted": True, "event_id": telemetry.event_id, "status": "ACCEPTED", "duplicate": True, "fusion_state": existing.fusion_state, "incident_id": incident_id}
     now = datetime.now(timezone.utc)
     observed_at = telemetry.observed_at or now
     fusion = evaluate(telemetry)
@@ -53,6 +55,7 @@ async def ingest(telemetry: TelemetryIn, session: Session = Depends(get_session)
         device.last_seen_at, device.firmware_version, device.state = now, telemetry.firmware_version, "ONLINE"
     payload = telemetry.model_dump(mode="json")
     payload["observed_at"] = observed_at.isoformat()
+    payload["server_fusion"] = fusion.model_dump(mode="json")
     event = TelemetryEvent(event_id=telemetry.event_id, device_id=telemetry.device_id, observed_at=observed_at, received_at=now, payload=payload, fusion_state=fusion.state, fusion_reason=fusion.reason)
     session.add(event)
     incident_id = None
@@ -68,10 +71,10 @@ async def ingest(telemetry: TelemetryIn, session: Session = Depends(get_session)
         if existing is None:
             raise HTTPException(status_code=503, detail="Telemetry could not be committed")
         existing_incident = str(uuid5(NAMESPACE_URL, f"{existing.device_id}:{existing.event_id}")) if existing.fusion_state == "INCIDENT" else None
-        return {"accepted": True, "duplicate": True, "fusion_state": existing.fusion_state, "incident_id": existing_incident}
-    message = {"type": "telemetry", "device_id": telemetry.device_id, "observed_at": observed_at.isoformat(), "environment": telemetry.environment.model_dump(), "csi": telemetry.csi.model_dump(), "fusion": fusion.model_dump(), "incident_id": incident_id}
+        return {"accepted": True, "event_id": telemetry.event_id, "status": "ACCEPTED", "duplicate": True, "fusion_state": existing.fusion_state, "incident_id": existing_incident}
+    message = {"type": "telemetry", "event_id": telemetry.event_id, "device_id": telemetry.device_id, "observed_at": observed_at.isoformat(), "environment": telemetry.environment.model_dump(), "csi": telemetry.csi.model_dump(), "system": telemetry.system.model_dump(), "fusion": fusion.model_dump(), "incident_id": incident_id}
     await hub.broadcast(message)
-    return {"accepted": True, "duplicate": False, "fusion_state": fusion.state, "incident_id": incident_id}
+    return {"accepted": True, "event_id": telemetry.event_id, "status": "ACCEPTED", "duplicate": False, "fusion_state": fusion.state, "incident_id": incident_id}
 
 
 @app.get("/api/v1/overview")

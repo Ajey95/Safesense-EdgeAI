@@ -200,13 +200,40 @@ static delivery_status_t persist_transition(const gateway_state_t *snapshot,
 #endif
     const safety_output_pattern_t output = safety_output_pattern_for_state(decision->state, 0u);
     const float gas_ratio = snapshot->environment.gas_ratio_q15 / 32768.0f;
+    const bool sensor_healthy =
+        (snapshot->environment.flags & NODE_FLAG_SENSOR_HEALTHY) != 0u;
+    const bool gas_available =
+        (snapshot->environment.flags & (NODE_FLAG_GAS_VALID | NODE_FLAG_HEAT_STABLE)) ==
+            (NODE_FLAG_GAS_VALID | NODE_FLAG_HEAT_STABLE) &&
+        snapshot->environment.gas_resistance_ohm > 0u;
+    char temperature_json[24] = "null";
+    char humidity_json[24] = "null";
+    char pressure_json[24] = "null";
+    char gas_resistance_json[24] = "null";
+    char gas_baseline_json[24] = "null";
+    char gas_ratio_json[24] = "null";
+    if (sensor_healthy) {
+        snprintf(temperature_json, sizeof(temperature_json), "%.3f",
+                 snapshot->environment.temperature_milli_c / 1000.0f);
+        snprintf(humidity_json, sizeof(humidity_json), "%.3f",
+                 snapshot->environment.humidity_milli_percent / 1000.0f);
+        snprintf(pressure_json, sizeof(pressure_json), "%lu",
+                 (unsigned long)snapshot->environment.pressure_pa);
+    }
+    if (gas_available) {
+        snprintf(gas_resistance_json, sizeof(gas_resistance_json), "%lu",
+                 (unsigned long)snapshot->environment.gas_resistance_ohm);
+        snprintf(gas_baseline_json, sizeof(gas_baseline_json), "%lu",
+                 (unsigned long)snapshot->environment.gas_baseline_ohm);
+        snprintf(gas_ratio_json, sizeof(gas_ratio_json), "%.4f", gas_ratio);
+    }
     const int length = snprintf(
         record.payload, sizeof(record.payload),
         "{\"event_id\":\"%s\",\"device_id\":\"%s\",\"observed_at\":null,"
         "\"firmware_version\":\"esp32s3-v2\","
-        "\"environment\":{\"temperature_c\":%.3f,\"humidity_pct\":%.3f,"
-        "\"pressure_pa\":%lu,\"gas_resistance_ohm\":%lu,\"gas_baseline_ohm\":%lu,"
-        "\"gas_ratio\":%.4f,\"gas_risk\":\"%s\",\"gas_valid\":%s,"
+        "\"environment\":{\"temperature_c\":%s,\"humidity_pct\":%s,"
+        "\"pressure_pa\":%s,\"gas_resistance_ohm\":%s,\"gas_baseline_ohm\":%s,"
+        "\"gas_ratio\":%s,\"gas_risk\":\"%s\",\"gas_valid\":%s,"
         "\"heat_stable\":%s,\"sensor_healthy\":%s,\"is_fresh\":%s},"
         "\"csi\":{\"activity\":\"%s\",\"confidence\":%.3f,\"quality\":\"%s\","
         "\"tx_node\":\"ONLINE\",\"rx_node\":\"ONLINE\",\"packet_rate_hz\":%.2f,"
@@ -217,11 +244,8 @@ static delivery_status_t persist_transition(const gateway_state_t *snapshot,
         "\"output_state\":\"%s\",\"green_led\":%s,\"yellow_led\":%s,"
         "\"red_led\":%s,\"buzzer_on\":%s,\"queue_depth\":%u,\"csi_drops\":%lu}}",
         record.event_id, CONFIG_SAFESENSE_DEVICE_ID,
-        snapshot->environment.temperature_milli_c / 1000.0f,
-        snapshot->environment.humidity_milli_percent / 1000.0f,
-        (unsigned long)snapshot->environment.pressure_pa,
-        (unsigned long)snapshot->environment.gas_resistance_ohm,
-        (unsigned long)snapshot->environment.gas_baseline_ohm, gas_ratio,
+        temperature_json, humidity_json, pressure_json, gas_resistance_json,
+        gas_baseline_json, gas_ratio_json,
         risk_name(snapshot->environment.gas_risk),
         (snapshot->environment.flags & NODE_FLAG_GAS_VALID) ? "true" : "false",
         (snapshot->environment.flags & NODE_FLAG_HEAT_STABLE) ? "true" : "false",
@@ -257,6 +281,12 @@ static void fusion_output_task(void *argument)
         snapshot = gateway_state;
         xSemaphoreGive(state_lock);
         const int64_t now = esp_timer_get_time();
+        if (snapshot.environment_received_us <= 0) {
+            (void)safety_output_esp_idf_apply(&local_output, FUSION_STATE_DEGRADED,
+                                              (uint32_t)(now / 1000));
+            vTaskDelay(pdMS_TO_TICKS(100u));
+            continue;
+        }
         const bool environment_fresh = snapshot.environment_received_us > 0 &&
             now - snapshot.environment_received_us <= CONFIG_SAFESENSE_SENSOR_MAX_AGE_MS * 1000LL;
         const bool csi_fresh = snapshot.csi_received_us > 0 &&

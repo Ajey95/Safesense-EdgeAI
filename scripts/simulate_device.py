@@ -17,7 +17,52 @@ SCENES = cycle([
 
 while True:
     activity, confidence, risk, fresh = next(SCENES)
-    payload = {"event_id": str(uuid4()), "device_id": "safesense-rx-01", "observed_at": datetime.now(timezone.utc).isoformat(), "firmware_version": "sim-0.2", "environment": {"temperature_c": 29.3, "humidity_pct": 61.0, "pressure_pa": 100920.0, "gas_risk": risk, "sensor_healthy": True}, "csi": {"activity": activity, "confidence": confidence, "quality": "GOOD" if fresh else "UNAVAILABLE", "tx_node": "ONLINE" if fresh else "UNKNOWN", "rx_node": "ONLINE", "packet_rate_hz": 85.0 if fresh else 0.0, "rssi_dbm": -49, "is_fresh": fresh}, "system": {"mqtt": "CONNECTED", "local_storage": "OK", "esp32_status": "ONLINE"}}
+    ratio = {"NORMAL": 1.02, "WARNING": 0.70, "CRITICAL": 0.45}[risk]
+    output_state = {"NORMAL": "NORMAL", "WARNING": "WARNING", "CRITICAL": "INCIDENT"}[risk]
+    payload = {
+        "event_id": str(uuid4()),
+        "device_id": "esp32s3-node2",
+        "observed_at": datetime.now(timezone.utc).isoformat(),
+        "firmware_version": "sim-esp32s3-v2",
+        "environment": {
+            "temperature_c": 29.3,
+            "humidity_pct": 61.0,
+            "pressure_pa": 100920.0,
+            "gas_resistance_ohm": 100000 * ratio,
+            "gas_baseline_ohm": 100000,
+            "gas_ratio": ratio,
+            "gas_risk": risk,
+            "gas_valid": True,
+            "heat_stable": True,
+            "sensor_healthy": True,
+            "is_fresh": True,
+        },
+        "csi": {
+            "activity": activity,
+            "confidence": confidence,
+            "quality": "GOOD" if fresh else "UNAVAILABLE",
+            "tx_node": "ONLINE",
+            "rx_node": "ONLINE",
+            "packet_rate_hz": 85.0 if fresh else 0.0,
+            "rssi_dbm": -49,
+            "is_fresh": fresh,
+            "window_ready": fresh,
+            "model_release_state": "DISABLED_RELEASE_GATE",
+        },
+        "system": {
+            "mqtt": "CONNECTED",
+            "local_storage": "OK",
+            "node1_status": "ONLINE",
+            "node2_status": "ONLINE",
+            "output_state": output_state if fresh or risk != "NORMAL" else "DEGRADED",
+            "green_led": output_state == "NORMAL" and fresh,
+            "yellow_led": output_state == "WARNING" or (not fresh and risk == "NORMAL"),
+            "red_led": output_state == "INCIDENT",
+            "buzzer_on": output_state == "INCIDENT",
+            "queue_depth": 1,
+            "csi_drops": 0,
+        },
+    }
     request = Request(URL, data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST")
     try:
         with urlopen(request, timeout=3) as response:

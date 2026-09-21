@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Activity(StrEnum):
@@ -54,13 +54,38 @@ class StorageState(StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
+class ModelReleaseState(StrEnum):
+    RELEASED_INT8 = "RELEASED_INT8"
+    DISABLED_RELEASE_GATE = "DISABLED_RELEASE_GATE"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
 class EnvironmentalReading(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    temperature_c: float = Field(ge=-40, le=100)
-    humidity_pct: float = Field(ge=0, le=100)
+    temperature_c: float | None = Field(default=None, ge=-40, le=100)
+    humidity_pct: float | None = Field(default=None, ge=0, le=100)
     pressure_pa: float | None = Field(default=None, ge=30000, le=110000)
+    gas_resistance_ohm: float | None = Field(default=None, gt=0)
+    gas_baseline_ohm: float | None = Field(default=None, gt=0)
+    gas_ratio: float | None = Field(default=None, ge=0, le=2)
     gas_risk: Risk
+    gas_valid: bool = False
+    heat_stable: bool = False
     sensor_healthy: bool = True
+    is_fresh: bool = True
+
+    @model_validator(mode="after")
+    def require_valid_gas_for_classification(self):
+        if self.sensor_healthy and (
+            self.temperature_c is None or self.humidity_pct is None or self.pressure_pa is None
+        ):
+            raise ValueError("healthy BME680 data requires temperature, humidity, and pressure")
+        if self.gas_risk != Risk.UNAVAILABLE:
+            if not self.gas_valid or not self.heat_stable:
+                raise ValueError("classified gas risk requires valid, heat-stable BME680 data")
+            if self.gas_resistance_ohm is None or self.gas_baseline_ohm is None or self.gas_ratio is None:
+                raise ValueError("classified gas risk requires resistance, baseline, and ratio")
+        return self
 
 
 class CsiReading(BaseModel):
@@ -73,6 +98,8 @@ class CsiReading(BaseModel):
     packet_rate_hz: float = Field(ge=0, le=10000)
     rssi_dbm: int = Field(ge=-127, le=0)
     is_fresh: bool
+    window_ready: bool = False
+    model_release_state: ModelReleaseState = ModelReleaseState.UNAVAILABLE
     window_frames: int | None = Field(default=None, ge=1, le=1000)
     selected_subcarriers: int | None = Field(default=None, ge=1, le=256)
     model_version: str | None = Field(default=None, max_length=80)
@@ -84,7 +111,15 @@ class SystemReading(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mqtt: ServiceState = ServiceState.UNKNOWN
     local_storage: StorageState = StorageState.UNKNOWN
-    esp32_status: NodeState = NodeState.UNKNOWN
+    node1_status: NodeState = NodeState.UNKNOWN
+    node2_status: NodeState = NodeState.UNKNOWN
+    output_state: FusionState = FusionState.DEGRADED
+    green_led: bool = False
+    yellow_led: bool = False
+    red_led: bool = False
+    buzzer_on: bool = False
+    queue_depth: int = Field(default=0, ge=0, le=16)
+    csi_drops: int = Field(default=0, ge=0)
 
 
 class TelemetryIn(BaseModel):

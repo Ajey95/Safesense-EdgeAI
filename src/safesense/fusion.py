@@ -12,6 +12,8 @@ def evaluate(telemetry: TelemetryIn) -> FusionResult:
         return FusionResult(state=FusionState.INCIDENT, reason="Critical environmental risk; CSI cannot suppress the incident.", reason_code="ENVIRONMENT_CRITICAL", human_context=HumanContext.KNOWN if context_known else HumanContext.UNKNOWN, local_alarm=True, incident_required=True)
     if not env.sensor_healthy or env.gas_risk == Risk.UNAVAILABLE:
         return FusionResult(state=FusionState.DEGRADED, reason="Environmental sensor health is degraded; safe conditions cannot be confirmed.", reason_code="ENVIRONMENT_UNAVAILABLE", human_context=HumanContext.UNKNOWN, local_alarm=False, incident_required=False)
+    if not env.is_fresh:
+        return FusionResult(state=FusionState.DEGRADED, reason="Environmental reading is stale; safe conditions cannot be confirmed.", reason_code="ENVIRONMENT_STALE", human_context=HumanContext.UNKNOWN, local_alarm=False, incident_required=False)
     if env.gas_risk == Risk.WARNING:
         return FusionResult(state=FusionState.WARNING, reason="Environmental warning requires attention.", reason_code="ENVIRONMENT_WARNING", human_context=HumanContext.KNOWN if context_known else HumanContext.UNKNOWN, local_alarm=False, incident_required=False)
     if not csi.is_fresh:
