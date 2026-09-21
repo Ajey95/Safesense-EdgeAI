@@ -18,16 +18,16 @@ Status words are deliberate:
 | NVS persistence | HOST VERIFIED / TARGET BUILD VERIFIED | Portable reboot/duplicate/full/corrupt-store tests and ESP-IDF NVS adapter; physical reset pending |
 | MQTT reliability | HOST VERIFIED / TARGET BUILD VERIFIED | Exact ACK parser plus a broker/bridge/API/ACK round trip on port 1884; board-to-broker integration pending |
 | Backend/SQLite | HOST VERIFIED | Validation, idempotency, WAL/FULL sync, incidents, acknowledgement |
-| Dashboard | HOST VERIFIED | Contract tests plus dark/light desktop and 390 × 844 visual inspection; live hardware feed pending |
+| Dashboard | HOST VERIFIED | Contract and browser checks; software-test provenance and bounded incident list verified; live hardware feed pending |
 
 ## Current automated proof
 
-- 23 Python tests pass.
+- 25 Python tests pass.
 - 7 portable C suites pass.
 - Python source bytecode compilation passes.
 - Both applications build successfully for ESP32-S3 with ESP-IDF 6.1.
 - A real local MQTT publish completed bridge ingestion, durable API storage, and the exact application ACK.
-- The live dashboard was inspected in a real browser and truthfully showed unavailable CSI/model evidence.
+- The live dashboard was inspected in a real browser and truthfully showed `SOFTWARE TEST`, unavailable sensors/CSI, unknown nodes, and no fabricated hardware incident.
 
 ## Remaining physical acceptance
 

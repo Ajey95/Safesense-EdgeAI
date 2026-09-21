@@ -83,6 +83,7 @@ def live_workspace() -> None:
     st.markdown(
         f"<div class='summary-strip'><div><span>Overall status</span><strong class='{tone(overall_status)}'>{escape(overall_status)}</strong></div>"
         f"<div><span>Device</span><strong>{escape(view['device_id'])}</strong></div>"
+        f"<div><span>Source</span><strong class='{tone(view['data_source'])}'>{escape(view['data_source'])}</strong></div>"
         f"<div><span>Last update</span><strong>{escape(stamp(view['observed_at']))}</strong></div></div>",
         unsafe_allow_html=True,
     )
@@ -130,7 +131,7 @@ st.set_page_config(page_title="SafeSense / WiSense Dashboard", page_icon="◈", 
 st.markdown("""<style>
   .block-container{max-width:1180px;padding-top:2.2rem;padding-bottom:3rem}
   h1{letter-spacing:-.045em;font-size:2.25rem!important;margin-bottom:.15rem}.review-subtitle{color:var(--text-color);opacity:.62;margin-bottom:1.5rem}
-  .summary-strip{display:grid;grid-template-columns:1fr 1.5fr 1fr;gap:1px;background:color-mix(in srgb,var(--text-color) 15%,transparent);border:1px solid color-mix(in srgb,var(--text-color) 15%,transparent);border-radius:.65rem;overflow:hidden;margin:1.2rem 0 1.5rem}
+  .summary-strip{display:grid;grid-template-columns:1fr 1.35fr 1.1fr 1fr;gap:1px;background:color-mix(in srgb,var(--text-color) 15%,transparent);border:1px solid color-mix(in srgb,var(--text-color) 15%,transparent);border-radius:.65rem;overflow:hidden;margin:1.2rem 0 1.5rem}
   .summary-strip>div{display:flex;flex-direction:column;gap:.3rem;background:var(--secondary-background-color);padding:.85rem 1rem}.summary-strip span{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;opacity:.58}.summary-strip strong{font-size:.98rem}
   .review-card{border:1px solid color-mix(in srgb,var(--text-color) 15%,transparent);border-radius:.75rem;padding:1.1rem 1.25rem;margin-bottom:1.15rem;background:var(--secondary-background-color);box-shadow:0 8px 28px color-mix(in srgb,var(--text-color) 5%,transparent)}
   .review-card h2{font-size:.74rem!important;letter-spacing:.11em;margin:0 0 .7rem!important;opacity:.62}.status-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;min-height:2.05rem;border-top:1px solid color-mix(in srgb,var(--text-color) 9%,transparent)}.status-row:first-of-type{border-top:0}.status-label{opacity:.72}.status-value{font-weight:680;text-align:right}.good{color:#16865b}.warning{color:#b77900}.danger{color:#d13c31}.unknown{color:#4e7fd8}

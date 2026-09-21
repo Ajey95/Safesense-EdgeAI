@@ -31,8 +31,11 @@ The BME680 gas channel reports gas resistance. SafeSense does **not** claim Bosc
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[dev]"
+$env:SAFESENSE_DATABASE_URL = "sqlite:///data/review-qa/live-review.db"
 python -m uvicorn safesense.main:app --host 127.0.0.1 --port 8000
 ```
+
+The dedicated review database keeps automated or earlier development records out of the presentation view. Pytest also uses its own temporary database and removes it at session end.
 
 In a second terminal:
 

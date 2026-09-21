@@ -13,6 +13,13 @@ def incident_display(incidents: list[dict], limit: int = 3) -> tuple[list[dict],
     return active[:limit], max(0, len(active) - limit)
 
 
+def _data_source(payload: dict) -> str:
+    firmware = str(payload.get("firmware_version") or "").lower()
+    if firmware.startswith(("sim-", "mqtt-smoke-", "replay-")):
+        return "SOFTWARE TEST"
+    return "DEVICE TELEMETRY" if firmware else "UNVERIFIED"
+
+
 def tone(value: str) -> str:
     normalized = value.upper()
     if normalized in {"SAFE", "NORMAL", "GOOD", "ONLINE", "CONNECTED", "OK", "VALID / STABLE", "HOST VERIFIED", "LIVE"}:
@@ -66,8 +73,8 @@ def build_dashboard_view(latest: dict) -> dict:
         "WI-FI CSI": [
             ("TX Node", str(csi.get("tx_node") or "UNKNOWN")),
             ("RX Node", str(csi.get("rx_node") or "UNKNOWN")),
-            ("RSSI", _number(csi.get("rssi_dbm"), "dBm", 0)),
-            ("Packet Rate", _number(csi.get("packet_rate_hz"), "packets/s", 1)),
+            ("RSSI", _number(csi.get("rssi_dbm"), "dBm", 0) if csi.get("is_fresh") else UNAVAILABLE),
+            ("Packet Rate", _number(csi.get("packet_rate_hz"), "packets/s", 1) if csi.get("is_fresh") else UNAVAILABLE),
             ("CSI Quality", str(csi.get("quality") or "UNAVAILABLE")),
             ("Window", "READY" if csi.get("window_ready") else "NOT READY"),
             ("Model Release", model_release),
@@ -101,6 +108,7 @@ def build_dashboard_view(latest: dict) -> dict:
         "overall_status": fusion_state,
         "device_id": str(latest.get("device_id") or "NOT REPORTED"),
         "observed_at": latest.get("observed_at"),
+        "data_source": _data_source(payload),
         "sections": sections,
     }
 

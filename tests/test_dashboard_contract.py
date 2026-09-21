@@ -127,6 +127,18 @@ def test_incident_display_is_bounded_and_reports_hidden_count():
     assert hidden_count == 4
 
 
+def test_software_generated_telemetry_is_labelled_in_summary():
+    latest = latest_payload()
+    latest["payload"]["firmware_version"] = "mqtt-smoke-v2"
+    latest["payload"]["csi"]["is_fresh"] = False
+    latest["payload"]["csi"]["quality"] = "UNAVAILABLE"
+    view = build_dashboard_view(latest)
+    assert view["data_source"] == "SOFTWARE TEST"
+    rows = dict(view["sections"]["WI-FI CSI"])
+    assert rows["RSSI"] == "UNAVAILABLE"
+    assert rows["Packet Rate"] == "UNAVAILABLE"
+
+
 def test_node2_payload_reports_queue_depth_after_persisting_current_event():
     source = Path("firmware/node2_csi_gateway/main/main.c").read_text(encoding="utf-8")
     assert "delivery_queue_count(&delivery_queue) + 1u" in source

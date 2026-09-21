@@ -19,11 +19,11 @@ The project targets exactly one BME680, two ESP32-S3 boards, resistors, LEDs, an
 
 ## Verification snapshot — 2026-09-22
 
-- Python: 23 tests passing.
+- Python: 25 tests passing.
 - Portable C: 7 suites passing.
 - Target builds: Node 1 and Node 2 compile for `esp32s3` with ESP-IDF 6.1; images are 781,520 and 899,840 bytes respectively.
 - MQTT: local broker on port 1884 completed publish → bridge → API/SQLite → exact `ACCEPTED` ACK.
-- Dashboard: live page inspected; unavailable CSI/model evidence is shown explicitly and no internal instructions are displayed.
+- Dashboard: live page inspected; software-generated telemetry is labelled `SOFTWARE TEST`, unavailable hardware stays `UNKNOWN`/`UNAVAILABLE`, the incident list is bounded, and no internal instructions are displayed.
 - Physical flashing and device validation remain pending because no ESP32-S3 serial port is currently detected.
 
 ## Reviewer entry points
