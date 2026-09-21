@@ -19,7 +19,7 @@ The project targets exactly one BME680, two ESP32-S3 boards, resistors, LEDs, an
 
 ## Verification snapshot — 2026-09-21
 
-- Python: 19 tests passing.
+- Python: 21 tests passing.
 - Portable C: 7 suites passing.
 - Dashboard: desktop/narrow and dark/light inspected; incident acknowledgement works; console clean.
 - Target ESP-IDF compilation and physical device validation remain pending because the toolchain/hardware are unavailable.

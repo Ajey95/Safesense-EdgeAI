@@ -258,7 +258,8 @@ static delivery_status_t persist_transition(const gateway_state_t *snapshot,
         delivery_mqtt_is_connected() ? "CONNECTED" : "DISCONNECTED",
         state_name(decision->state), output.green_led ? "true" : "false",
         output.yellow_led ? "true" : "false", output.red_led ? "true" : "false",
-        output.buzzer_on ? "true" : "false", delivery_queue_count(&delivery_queue),
+        output.buzzer_on ? "true" : "false",
+        (unsigned int)(delivery_queue_count(&delivery_queue) + 1u),
         (unsigned long)csi_capture_dropped_packets());
     if (length < 0 || length >= (int)sizeof(record.payload)) {
         return DELIVERY_ERR_ARGUMENT;

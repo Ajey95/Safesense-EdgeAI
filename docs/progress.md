@@ -22,7 +22,7 @@ Status words are deliberate:
 
 ## Current automated proof
 
-- 19 Python tests pass.
+- 21 Python tests pass.
 - 7 portable C suites pass.
 - Python source bytecode compilation passes.
 - Dashboard interaction, narrow/desktop layout, light/dark themes, and console output were inspected in a real browser.

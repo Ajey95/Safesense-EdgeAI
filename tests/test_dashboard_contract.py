@@ -115,3 +115,8 @@ def test_dynamic_values_are_html_escaped_and_ui_has_no_internal_instructions():
 def test_acknowledgement_toast_does_not_use_invalid_text_checkmark_icon():
     source = Path("dashboard/app.py").read_text(encoding="utf-8")
     assert 'icon="✓"' not in source
+
+
+def test_node2_payload_reports_queue_depth_after_persisting_current_event():
+    source = Path("firmware/node2_csi_gateway/main/main.c").read_text(encoding="utf-8")
+    assert "delivery_queue_count(&delivery_queue) + 1u" in source
