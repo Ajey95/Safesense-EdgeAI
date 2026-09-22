@@ -94,7 +94,21 @@ static bme680_status_t start_sensor(bme680_esp_idf_t *sensor)
     if (i2c_new_master_bus(&bus_config, &bus) != ESP_OK) {
         return BME680_ERR_BUS;
     }
-    return bme680_esp_idf_init(sensor, bus, CONFIG_SAFESENSE_BME680_ADDRESS, NULL);
+    const bool low_available =
+        i2c_master_probe(bus, BME680_I2C_ADDRESS_LOW, 100) == ESP_OK;
+    const bool high_available =
+        i2c_master_probe(bus, BME680_I2C_ADDRESS_HIGH, 100) == ESP_OK;
+    const uint8_t address = bme680_select_i2c_address(
+        CONFIG_SAFESENSE_BME680_ADDRESS, low_available, high_available);
+    if (address == 0u) {
+        ESP_LOGE(TAG, "No BME680 response on I2C 0x76 or 0x77 (SDA=%d SCL=%d)",
+                 CONFIG_SAFESENSE_I2C_SDA_GPIO, CONFIG_SAFESENSE_I2C_SCL_GPIO);
+        i2c_del_master_bus(bus);
+        return BME680_ERR_BUS;
+    }
+    ESP_LOGI(TAG, "BME680 detected at I2C 0x%02X (SDA=%d SCL=%d)", address,
+             CONFIG_SAFESENSE_I2C_SDA_GPIO, CONFIG_SAFESENSE_I2C_SCL_GPIO);
+    return bme680_esp_idf_init(sensor, bus, address, NULL);
 }
 
 static void sensor_task(void *argument)

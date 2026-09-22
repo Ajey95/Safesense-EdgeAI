@@ -74,6 +74,9 @@ typedef struct {
 } bme680_reading_t;
 
 bme680_status_t bme680_validate_chip_id(uint8_t chip_id);
+uint8_t bme680_select_i2c_address(uint8_t preferred,
+                                  bool low_available,
+                                  bool high_available);
 bme680_status_t bme680_parse_calibration(const uint8_t *registers,
                                          size_t length,
                                          bme680_calibration_t *calibration);

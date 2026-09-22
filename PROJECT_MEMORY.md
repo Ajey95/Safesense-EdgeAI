@@ -24,7 +24,14 @@ The project targets exactly one BME680, two ESP32-S3 boards, resistors, LEDs, an
 - Target builds: Node 1 and Node 2 compile for `esp32s3` with ESP-IDF 6.1; images are 781,520 and 899,840 bytes respectively.
 - MQTT: local broker on port 1884 completed publish → bridge → API/SQLite → exact `ACCEPTED` ACK.
 - Dashboard: live page inspected; software-generated telemetry is labelled `SOFTWARE TEST`, unavailable hardware stays `UNKNOWN`/`UNAVAILABLE`, the incident list is bounded, and no internal instructions are displayed.
-- Physical flashing and device validation remain pending because no ESP32-S3 serial port is currently detected.
+- This software-only snapshot was superseded by the first transmitter hardware check below.
+
+## First transmitter hardware check — 2026-09-22
+
+- One ESP32-S3 was detected as Espressif USB Serial/JTAG on `COM9` and identified as revision v0.2 with 4 MB flash and 2 MB PSRAM.
+- Node 1 flashed successfully with verified image hashes and booted ESP-IDF 6.1.
+- The `SafeSense-V2` SoftAP started on channel 6 with DHCP at `192.168.4.1`.
+- The BME680 did not acknowledge either valid I2C address. Runtime evidence reports no response at `0x76` or `0x77` on SDA GPIO 8 / SCL GPIO 9, so sensor readings remain unavailable until power, pins, I2C mode, and pull-ups are corrected.
 
 ## Reviewer entry points
 

@@ -96,7 +96,7 @@ mingw32-make -C firmware/tests clean test
 python -m compileall -q src scripts dashboard
 ```
 
-Host tests verify the portable driver maths, gas policy, packet contract, CSI preprocessing, fusion, persistence semantics, API, MQTT acknowledgement, and dashboard contract. Both ESP-IDF 6.1 `esp32s3` applications compile successfully, and the laptop broker-to-bridge-to-API-to-ACK path has completed a real MQTT round trip. Flashing, physical BME680 readings, radio CSI, reboot persistence, LEDs/buzzer, and board-to-laptop MQTT remain explicit device gates because neither board is currently detected over USB.
+Host tests verify the portable driver maths, gas policy, packet contract, CSI preprocessing, fusion, persistence semantics, API, MQTT acknowledgement, and dashboard contract. Both ESP-IDF 6.1 `esp32s3` applications compile successfully, and the laptop broker-to-bridge-to-API-to-ACK path has completed a real MQTT round trip. Node 1 has also been flashed and its SoftAP boot verified. Physical BME680 readings remain blocked by an I2C wiring/power issue: the current board reports no response at either `0x76` or `0x77` on SDA GPIO 8 / SCL GPIO 9. Node 2 flashing, radio CSI, reboot persistence, LEDs/buzzer, and board-to-laptop MQTT remain explicit device gates.
 
 ## Repository map
 

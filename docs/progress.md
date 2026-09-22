@@ -9,7 +9,7 @@ Status words are deliberate:
 
 | Area | Status | Evidence and remaining gate |
 |---|---|---|
-| Custom BME680 library | HOST VERIFIED / TARGET BUILD VERIFIED | Register protocol, `0x61` chip ID, calibration, compensation, heater maths, forced-mode adapter; physical reading accuracy pending |
+| Custom BME680 library | HOST VERIFIED / TARGET BUILD VERIFIED / DEVICE BLOCKED | Register protocol, `0x61` chip ID, calibration, compensation, heater maths, forced-mode adapter and `0x76`/`0x77` detection; Node 1 currently receives no I2C acknowledgement on GPIO 8/9 |
 | Relative gas policy | HOST VERIFIED | Warm-up, validity, EMA baseline, warning/critical ratios; target-room calibration pending |
 | Node protocol | HOST VERIFIED | Fixed 50-byte big-endian packet, CRC32, version, sequence, freshness; real packet-loss/radio check pending |
 | CSI preprocessing | HOST VERIFIED / TARGET BUILD VERIFIED | Invalid-frame rejection, I/Q amplitude, 48 carriers, 100 frames; physical ESP32-S3 CSI pending |
@@ -31,8 +31,8 @@ Status words are deliberate:
 
 ## Remaining physical acceptance
 
-1. Flash both boards and verify BME680 address, chip ID, readings, heater flags, and disconnect state.
-2. Confirm Node 1 UDP rate/CRC and Node 2 physical CSI windows.
+1. Correct the BME680 power/I2C wiring and verify chip ID, readings, heater flags, and disconnect state on the already-flashed Node 1.
+2. Flash Node 2 and confirm Node 1 UDP rate/CRC plus physical CSI windows.
 3. Confirm green/yellow/red LED polarity and active/passive buzzer configuration.
 4. Demonstrate queued event survival across a physical reset and exact ACK drain through the broker.
 5. Collect target-room CSI and pass the model release gate before enabling INT8 inference.

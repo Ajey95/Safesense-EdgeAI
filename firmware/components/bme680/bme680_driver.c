@@ -2,6 +2,22 @@
 
 #include <math.h>
 
+uint8_t bme680_select_i2c_address(uint8_t preferred,
+                                  bool low_available,
+                                  bool high_available)
+{
+    if (preferred != BME680_I2C_ADDRESS_LOW &&
+        preferred != BME680_I2C_ADDRESS_HIGH) {
+        return 0u;
+    }
+    if (preferred == BME680_I2C_ADDRESS_LOW) {
+        return low_available ? BME680_I2C_ADDRESS_LOW
+                             : (high_available ? BME680_I2C_ADDRESS_HIGH : 0u);
+    }
+    return high_available ? BME680_I2C_ADDRESS_HIGH
+                          : (low_available ? BME680_I2C_ADDRESS_LOW : 0u);
+}
+
 static uint16_t u16le(const uint8_t *data)
 {
     return (uint16_t)data[0] | ((uint16_t)data[1] << 8);

@@ -29,6 +29,20 @@ static void test_chip_id_and_addresses(void)
     assert(bme680_validate_chip_id(0x60u) == BME680_ERR_NOT_FOUND);
 }
 
+static void test_i2c_address_falls_back_to_the_responding_sensor(void)
+{
+    assert(bme680_select_i2c_address(BME680_I2C_ADDRESS_LOW, true, true) ==
+           BME680_I2C_ADDRESS_LOW);
+    assert(bme680_select_i2c_address(BME680_I2C_ADDRESS_LOW, false, true) ==
+           BME680_I2C_ADDRESS_HIGH);
+    assert(bme680_select_i2c_address(BME680_I2C_ADDRESS_HIGH, true, true) ==
+           BME680_I2C_ADDRESS_HIGH);
+    assert(bme680_select_i2c_address(BME680_I2C_ADDRESS_HIGH, true, false) ==
+           BME680_I2C_ADDRESS_LOW);
+    assert(bme680_select_i2c_address(BME680_I2C_ADDRESS_LOW, false, false) == 0u);
+    assert(bme680_select_i2c_address(0x75u, true, true) == 0u);
+}
+
 static void test_calibration_parsing(void)
 {
     bme680_calibration_t c = parse_fixture();
@@ -108,6 +122,7 @@ static void test_measurement_validation(void)
 int main(void)
 {
     test_chip_id_and_addresses();
+    test_i2c_address_falls_back_to_the_responding_sensor();
     test_calibration_parsing();
     test_compensation_reference_vector();
     test_heater_and_duration_encoding();
