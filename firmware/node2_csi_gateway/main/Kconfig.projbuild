@@ -39,7 +39,7 @@ config SAFESENSE_CSI_MIN_CONFIDENCE_PERCENT
 
 config SAFESENSE_MQTT_BROKER_URI
     string "Laptop MQTT broker URI"
-    default "mqtt://192.168.4.2"
+    default "mqtt://192.168.4.3:1884"
 
 config SAFESENSE_DEVICE_ID
     string "Gateway device ID"
@@ -52,6 +52,11 @@ config SAFESENSE_MQTT_EVENT_TOPIC
 config SAFESENSE_MQTT_ACK_TOPIC
     string "Application acknowledgement topic"
     default "safesense/esp32s3-node2/ack"
+
+config SAFESENSE_TELEMETRY_INTERVAL_MS
+    int "Connected telemetry heartbeat interval (ms)"
+    range 1000 60000
+    default 5000
 
 config SAFESENSE_GREEN_LED_GPIO
     int "Green LED GPIO"

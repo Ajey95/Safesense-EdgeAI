@@ -1,7 +1,7 @@
 CC ?= gcc
 CFLAGS = -std=c11 -Wall -Wextra -Werror
 
-.PHONY: test test_bme680_driver test_gas_risk test_node_protocol test_safety_output test_delivery_queue clean
+.PHONY: test test_bme680_driver test_gas_risk test_node_protocol test_safety_output test_delivery_queue test_delivery_mqtt_state test_delivery_telemetry clean
 
 test_bme680_driver: bme680_driver_test
 	./bme680_driver_test
@@ -33,24 +33,38 @@ test_delivery_queue: delivery_queue_test
 delivery_queue_test: test_delivery_queue.c ../components/delivery/delivery_queue.c ../components/delivery/delivery_ack.c
 	$(CC) $(CFLAGS) -I../components/delivery/include $^ -o $@
 
+test_delivery_mqtt_state: delivery_mqtt_state_test
+	./delivery_mqtt_state_test
+
+delivery_mqtt_state_test: test_delivery_mqtt_state.c ../components/delivery/delivery_mqtt_state.c
+	$(CC) $(CFLAGS) -I../components/delivery/include $^ -o $@
+
+test_delivery_telemetry: delivery_telemetry_test
+	./delivery_telemetry_test
+
+delivery_telemetry_test: test_delivery_telemetry.c ../components/delivery/delivery_telemetry.c
+	$(CC) $(CFLAGS) -I../components/delivery/include $^ -o $@
+
 test_fusion_engine: test_fusion_engine.c ../components/fusion/fusion_engine.c
 	$(CC) $(CFLAGS) -I../components/fusion/include $^ -o $@
 
 test_csi_gas: test_csi_gas.c ../components/csi/csi_pipeline.c
 	$(CC) $(CFLAGS) -I../components/csi/include $^ -lm -o $@
 
-test: bme680_driver_test gas_risk_test node_protocol_test safety_output_test delivery_queue_test test_fusion_engine test_csi_gas
+test: bme680_driver_test gas_risk_test node_protocol_test safety_output_test delivery_queue_test delivery_mqtt_state_test delivery_telemetry_test test_fusion_engine test_csi_gas
 	./bme680_driver_test
 	./gas_risk_test
 	./node_protocol_test
 	./safety_output_test
 	./delivery_queue_test
+	./delivery_mqtt_state_test
+	./delivery_telemetry_test
 	./test_fusion_engine
 	./test_csi_gas
 
 clean:
 ifeq ($(OS),Windows_NT)
-	cmd /C "del /Q bme680_driver_test.exe gas_risk_test.exe node_protocol_test.exe safety_output_test.exe delivery_queue_test.exe test_bme680_driver.exe test_fusion_engine.exe test_csi_gas.exe 2>NUL || exit /B 0"
+	cmd /C "del /Q bme680_driver_test.exe gas_risk_test.exe node_protocol_test.exe safety_output_test.exe delivery_queue_test.exe delivery_mqtt_state_test.exe delivery_telemetry_test.exe test_bme680_driver.exe test_fusion_engine.exe test_csi_gas.exe 2>NUL || exit /B 0"
 else
-	$(RM) bme680_driver_test gas_risk_test node_protocol_test safety_output_test delivery_queue_test test_bme680_driver test_fusion_engine test_csi_gas
+	$(RM) bme680_driver_test gas_risk_test node_protocol_test safety_output_test delivery_queue_test delivery_mqtt_state_test delivery_telemetry_test test_bme680_driver test_fusion_engine test_csi_gas
 endif

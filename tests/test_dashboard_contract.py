@@ -1,6 +1,19 @@
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from safesense.dashboard_view import build_dashboard_view, incident_display, render_section_html
+from safesense.dashboard_view import (
+    build_dashboard_view,
+    incident_display,
+    local_clock,
+    render_section_html,
+)
+
+
+NOW = datetime(2026, 9, 21, 20, 0, 5, tzinfo=timezone.utc)
+
+
+def build_view(latest: dict, *, now: datetime = NOW) -> dict:
+    return build_dashboard_view(latest, now=now)
 
 
 def latest_payload():
@@ -52,7 +65,7 @@ def latest_payload():
 
 
 def test_view_contains_every_review_section_and_v2_field():
-    view = build_dashboard_view(latest_payload())
+    view = build_view(latest_payload())
     assert list(view["sections"]) == [
         "ENVIRONMENT",
         "WI-FI CSI",
@@ -90,7 +103,7 @@ def test_unavailable_values_are_not_rendered_as_zero_or_safe():
         "is_fresh": False,
     }
     latest["fusion_state"] = "DEGRADED"
-    view = build_dashboard_view(latest)
+    view = build_view(latest)
     rows = dict(view["sections"]["ENVIRONMENT"])
     assert rows["Temperature"] == "UNAVAILABLE"
     assert rows["Pressure"] == "UNAVAILABLE"
@@ -101,7 +114,7 @@ def test_unavailable_values_are_not_rendered_as_zero_or_safe():
 def test_dynamic_values_are_html_escaped_and_ui_has_no_internal_instructions():
     latest = latest_payload()
     latest["payload"]["csi"]["activity"] = "<script>alert(1)</script>"
-    view = build_dashboard_view(latest)
+    view = build_view(latest)
     html = render_section_html("HUMAN CONTEXT", view["sections"]["HUMAN CONTEXT"])
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
@@ -132,13 +145,45 @@ def test_software_generated_telemetry_is_labelled_in_summary():
     latest["payload"]["firmware_version"] = "mqtt-smoke-v2"
     latest["payload"]["csi"]["is_fresh"] = False
     latest["payload"]["csi"]["quality"] = "UNAVAILABLE"
-    view = build_dashboard_view(latest)
+    view = build_view(latest)
     assert view["data_source"] == "SOFTWARE TEST"
     rows = dict(view["sections"]["WI-FI CSI"])
     assert rows["RSSI"] == "UNAVAILABLE"
     assert rows["Packet Rate"] == "UNAVAILABLE"
 
 
+def test_stale_device_report_never_claims_current_connectivity_or_activity():
+    latest = latest_payload()
+    view = build_view(
+        latest,
+        now=datetime(2026, 9, 21, 20, 1, 0, tzinfo=timezone.utc),
+    )
+    csi = dict(view["sections"]["WI-FI CSI"])
+    human = dict(view["sections"]["HUMAN CONTEXT"])
+    system = dict(view["sections"]["SYSTEM"])
+
+    assert view["overall_status"] == "STALE DATA"
+    assert view["telemetry_fresh"] is False
+    assert view["telemetry_age_label"] == "1 min ago"
+    assert csi["TX Node"] == "UNKNOWN (STALE)"
+    assert csi["RX Node"] == "UNKNOWN (STALE)"
+    assert csi["Packet Rate"] == "UNAVAILABLE"
+    assert human["Current Activity"] == "UNKNOWN"
+    assert human["Confidence"] == "UNAVAILABLE"
+    assert system["MQTT"] == "UNKNOWN (STALE)"
+    assert system["Node 1 · Sensor/TX"] == "UNKNOWN (STALE)"
+    assert system["Node 2 · CSI/Gateway"] == "UNKNOWN (STALE)"
+    assert system["Output State"] == "UNKNOWN (STALE)"
+    assert system["LED Output"] == "UNKNOWN"
+    assert system["Buzzer"] == "UNKNOWN"
+
+
 def test_node2_payload_reports_queue_depth_after_persisting_current_event():
     source = Path("firmware/node2_csi_gateway/main/main.c").read_text(encoding="utf-8")
     assert "delivery_queue_count(&delivery_queue) + 1u" in source
+
+
+def test_naive_database_timestamp_is_interpreted_as_utc_before_display():
+    india = timezone(timedelta(hours=5, minutes=30))
+    assert local_clock("2026-09-21T20:45:27", local_timezone=india) == "02:15:27"
+    assert local_clock("2026-09-21T20:45:27+00:00", local_timezone=india) == "02:15:27"

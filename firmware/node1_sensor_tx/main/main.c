@@ -194,10 +194,14 @@ static void registration_task(void *argument)
             memcmp(token, REGISTRATION_TOKEN, strlen(REGISTRATION_TOKEN)) == 0) {
             sender.sin_port = htons(CONFIG_SAFESENSE_PROBE_PORT);
             xSemaphoreTake(state_lock, portMAX_DELAY);
+            const bool peer_changed = node_protocol_peer_changed(
+                peer_registered, registered_peer.sin_addr.s_addr, sender.sin_addr.s_addr);
             registered_peer = sender;
             peer_registered = true;
             xSemaphoreGive(state_lock);
-            ESP_LOGI(TAG, "Node 2 registered from %s", inet_ntoa(sender.sin_addr));
+            if (peer_changed) {
+                ESP_LOGI(TAG, "Node 2 registered from %s", inet_ntoa(sender.sin_addr));
+            }
         }
     }
 }

@@ -4,6 +4,7 @@
 #include "delivery_mqtt.h"
 #include "delivery_nvs.h"
 #include "delivery_queue.h"
+#include "delivery_telemetry.h"
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
@@ -48,7 +49,9 @@ typedef struct {
 
 static const char *TAG = "ss_node2";
 static SemaphoreHandle_t state_lock;
-static gateway_state_t gateway_state;
+static gateway_state_t gateway_state = {
+    .activity = FUSION_ACTIVITY_UNKNOWN,
+};
 static node_sequence_tracker_t sequence_tracker;
 static QueueHandle_t csi_queue;
 static csi_pipeline_t csi_pipeline;
@@ -185,11 +188,14 @@ static void csi_processing_task(void *argument)
     }
 }
 
-static delivery_status_t persist_transition(const gateway_state_t *snapshot,
-                                            const fusion_decision_t *decision,
-                                            bool environment_fresh,
-                                            bool csi_fresh)
+static delivery_status_t persist_snapshot(const gateway_state_t *snapshot,
+                                          const fusion_decision_t *decision,
+                                          bool environment_fresh,
+                                          bool csi_fresh,
+                                          bool mqtt_connected)
 {
+    const fusion_activity_t effective_activity =
+        fusion_activity_from_csi(snapshot->window_ready, snapshot->activity);
     delivery_record_t record = {0};
     snprintf(record.event_id, sizeof(record.event_id), "node2-%08lx-%08lx",
              (unsigned long)esp_random(), (unsigned long)snapshot->environment.sequence);
@@ -251,11 +257,11 @@ static delivery_status_t persist_transition(const gateway_state_t *snapshot,
         (snapshot->environment.flags & NODE_FLAG_HEAT_STABLE) ? "true" : "false",
         (snapshot->environment.flags & NODE_FLAG_SENSOR_HEALTHY) ? "true" : "false",
         environment_fresh ? "true" : "false",
-        activity_name(snapshot->activity), snapshot->confidence,
+        activity_name(effective_activity), snapshot->confidence,
         snapshot->window_ready ? "GOOD" : "UNAVAILABLE", snapshot->packet_rate_hz,
         snapshot->rssi_dbm, csi_fresh ? "true" : "false",
         snapshot->window_ready ? "true" : "false", model_state,
-        delivery_mqtt_is_connected() ? "CONNECTED" : "DISCONNECTED",
+        mqtt_connected ? "CONNECTED" : "DISCONNECTED",
         state_name(decision->state), output.green_led ? "true" : "false",
         output.yellow_led ? "true" : "false", output.red_led ? "true" : "false",
         output.buzzer_on ? "true" : "false",
@@ -271,6 +277,7 @@ static void fusion_output_task(void *argument)
 {
     (void)argument;
     fusion_tracker_t tracker = {0};
+    delivery_telemetry_tracker_t telemetry_tracker = {0};
     const fusion_policy_t policy = {
         .minimum_csi_confidence = CONFIG_SAFESENSE_CSI_MIN_CONFIDENCE_PERCENT / 100.0f,
     };
@@ -292,13 +299,15 @@ static void fusion_output_task(void *argument)
             now - snapshot.environment_received_us <= CONFIG_SAFESENSE_SENSOR_MAX_AGE_MS * 1000LL;
         const bool csi_fresh = snapshot.csi_received_us > 0 &&
             now - snapshot.csi_received_us <= CONFIG_SAFESENSE_CSI_MAX_AGE_MS * 1000LL;
+        const fusion_activity_t effective_activity =
+            fusion_activity_from_csi(snapshot.window_ready, snapshot.activity);
         const fusion_input_t input = {
             .environmental_risk = fusion_risk(snapshot.environment.gas_risk),
             .environmental_sensor_healthy =
                 (snapshot.environment.flags & NODE_FLAG_SENSOR_HEALTHY) != 0u,
             .environmental_reading_fresh = environment_fresh,
             .csi_fresh = csi_fresh,
-            .activity = snapshot.activity,
+            .activity = effective_activity,
             .csi_confidence = snapshot.confidence,
         };
         const fusion_decision_t decision = fusion_evaluate(&input, &policy);
@@ -308,20 +317,27 @@ static void fusion_output_task(void *argument)
         }
         (void)safety_output_esp_idf_apply(&local_output, displayed_state,
                                           (uint32_t)((now - state_started_us) / 1000));
-        if (fusion_tracker_step(&tracker, &decision)) {
-            const delivery_status_t queued = persist_transition(&snapshot, &decision,
-                                                                 environment_fresh,
-                                                                 csi_fresh);
+        const bool state_changed = fusion_tracker_step(&tracker, &decision);
+        const bool mqtt_connected = delivery_mqtt_is_connected();
+        if (delivery_telemetry_due(&telemetry_tracker, mqtt_connected, state_changed,
+                                   (uint64_t)(now / 1000),
+                                   CONFIG_SAFESENSE_TELEMETRY_INTERVAL_MS)) {
+            const delivery_status_t queued = persist_snapshot(&snapshot, &decision,
+                                                               environment_fresh,
+                                                               csi_fresh,
+                                                               mqtt_connected);
             if (queued == DELIVERY_OK) {
                 delivery_mqtt_flush();
             } else {
-                ESP_LOGE(TAG, "Transition persistence failed: %d pending=%u",
+                ESP_LOGE(TAG, "Telemetry persistence failed: %d pending=%u",
                          queued, delivery_queue_count(&delivery_queue));
             }
             ESP_LOGI(TAG, "Fusion=%s reason=%s activity=%s confidence=%.2f",
                      state_name(decision.state), decision.reason_code,
-                     activity_name(snapshot.activity), snapshot.confidence);
+                     activity_name(effective_activity), snapshot.confidence);
         }
+        /* Also drives bounded retransmission when an application ACK is lost. */
+        delivery_mqtt_flush();
         vTaskDelay(pdMS_TO_TICKS(100u));
     }
 }

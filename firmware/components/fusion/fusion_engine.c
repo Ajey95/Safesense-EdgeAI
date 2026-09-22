@@ -4,6 +4,14 @@ fusion_policy_t fusion_default_policy(void) {
     return (fusion_policy_t){.minimum_csi_confidence = 0.70f};
 }
 
+fusion_activity_t fusion_activity_from_csi(bool window_ready, fusion_activity_t classified_activity) {
+    if (!window_ready || classified_activity < FUSION_ACTIVITY_VACANT ||
+        classified_activity > FUSION_ACTIVITY_UNKNOWN) {
+        return FUSION_ACTIVITY_UNKNOWN;
+    }
+    return classified_activity;
+}
+
 fusion_decision_t fusion_evaluate(const fusion_input_t *input, const fusion_policy_t *configured_policy) {
     const fusion_policy_t default_policy = fusion_default_policy();
     const fusion_policy_t *policy = configured_policy ? configured_policy : &default_policy;

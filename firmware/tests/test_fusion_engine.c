@@ -7,6 +7,9 @@ static fusion_input_t nominal(void) {
 }
 
 int main(void) {
+    assert(fusion_activity_from_csi(false, FUSION_ACTIVITY_VACANT) == FUSION_ACTIVITY_UNKNOWN);
+    assert(fusion_activity_from_csi(true, FUSION_ACTIVITY_WALKING) == FUSION_ACTIVITY_WALKING);
+    assert(fusion_activity_from_csi(true, (fusion_activity_t)99) == FUSION_ACTIVITY_UNKNOWN);
     fusion_input_t input = nominal();
     fusion_decision_t decision = fusion_evaluate(&input, NULL);
     assert(decision.state == FUSION_STATE_NORMAL && decision.human_context == FUSION_CONTEXT_KNOWN);

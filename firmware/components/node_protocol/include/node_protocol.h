@@ -46,6 +46,7 @@ typedef struct {
 
 typedef struct {
     uint32_t last_sequence;
+    uint32_t last_uptime_ms;
     bool initialized;
 } node_sequence_tracker_t;
 
@@ -58,6 +59,10 @@ node_protocol_status_t node_protocol_decode(const uint8_t *packet,
                                             node_sequence_tracker_t *tracker,
                                             node_environment_t *reading);
 uint32_t node_protocol_crc32(const uint8_t *data, size_t length);
+/* Used by Node 1 to announce only a new or changed registered peer. */
+bool node_protocol_peer_changed(bool already_registered,
+                                uint32_t current_address,
+                                uint32_t candidate_address);
 
 #ifdef __cplusplus
 }

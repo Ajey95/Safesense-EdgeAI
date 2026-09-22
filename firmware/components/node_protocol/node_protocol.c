@@ -3,6 +3,14 @@
 #define NODE_MAGIC 0x53414645u
 #define NODE_PACKET_TYPE_ENVIRONMENT 1u
 #define NODE_ALLOWED_FLAGS (NODE_FLAG_SENSOR_HEALTHY | NODE_FLAG_GAS_VALID | NODE_FLAG_HEAT_STABLE)
+#define NODE_REBOOT_MIN_UPTIME_ROLLBACK_MS 1000u
+
+bool node_protocol_peer_changed(bool already_registered,
+                                uint32_t current_address,
+                                uint32_t candidate_address)
+{
+    return !already_registered || current_address != candidate_address;
+}
 
 static void put_u16(uint8_t *data, uint16_t value)
 {
@@ -136,7 +144,10 @@ node_protocol_status_t node_protocol_decode(const uint8_t *packet,
     if (decoded.sample_age_ms > maximum_sample_age_ms) {
         return NODE_PROTOCOL_ERR_STALE;
     }
-    if (tracker != NULL && tracker->initialized &&
+    const bool sender_rebooted = tracker != NULL && tracker->initialized &&
+        decoded.uptime_ms < tracker->last_uptime_ms &&
+        tracker->last_uptime_ms - decoded.uptime_ms >= NODE_REBOOT_MIN_UPTIME_ROLLBACK_MS;
+    if (tracker != NULL && tracker->initialized && !sender_rebooted &&
         !sequence_is_newer(decoded.sequence, tracker->last_sequence)) {
         return NODE_PROTOCOL_ERR_SEQUENCE;
     }
@@ -144,6 +155,7 @@ node_protocol_status_t node_protocol_decode(const uint8_t *packet,
     *reading = decoded;
     if (tracker != NULL) {
         tracker->last_sequence = decoded.sequence;
+        tracker->last_uptime_ms = decoded.uptime_ms;
         tracker->initialized = true;
     }
     return NODE_PROTOCOL_OK;

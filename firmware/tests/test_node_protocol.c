@@ -97,12 +97,52 @@ static void test_rejects_stale_and_accepts_boundary_values(void)
     assert(node_protocol_encode(&input, packet, sizeof(packet)) == NODE_PROTOCOL_ERR_VALUE);
 }
 
+static void test_accepts_new_sequence_epoch_after_sender_reboot(void)
+{
+    node_environment_t input = fixture();
+    input.sequence = 500u;
+    input.uptime_ms = 10000u;
+    uint8_t packet[NODE_PROTOCOL_PACKET_SIZE];
+    node_sequence_tracker_t tracker = {0};
+    node_environment_t output;
+    assert(node_protocol_encode(&input, packet, sizeof(packet)) == NODE_PROTOCOL_OK);
+    assert(node_protocol_decode(packet, sizeof(packet), 200u, &tracker, &output) == NODE_PROTOCOL_OK);
+
+    input.sequence = 0u;
+    input.uptime_ms = 100u;
+    assert(node_protocol_encode(&input, packet, sizeof(packet)) == NODE_PROTOCOL_OK);
+    assert(node_protocol_decode(packet, sizeof(packet), 200u, &tracker, &output) == NODE_PROTOCOL_OK);
+    assert(node_protocol_decode(packet, sizeof(packet), 200u, &tracker, &output) == NODE_PROTOCOL_ERR_SEQUENCE);
+}
+
+static void test_rejects_small_out_of_order_uptime_rollback(void)
+{
+    node_environment_t input = fixture();
+    input.sequence = 500u;
+    input.uptime_ms = 10000u;
+    uint8_t packet[NODE_PROTOCOL_PACKET_SIZE];
+    node_sequence_tracker_t tracker = {0};
+    node_environment_t output;
+    assert(node_protocol_encode(&input, packet, sizeof(packet)) == NODE_PROTOCOL_OK);
+    assert(node_protocol_decode(packet, sizeof(packet), 200u, &tracker, &output) == NODE_PROTOCOL_OK);
+
+    input.sequence = 499u;
+    input.uptime_ms = 9980u;
+    assert(node_protocol_encode(&input, packet, sizeof(packet)) == NODE_PROTOCOL_OK);
+    assert(node_protocol_decode(packet, sizeof(packet), 200u, &tracker, &output) == NODE_PROTOCOL_ERR_SEQUENCE);
+}
+
 int main(void)
 {
+    assert(node_protocol_peer_changed(false, 0u, 0x0204A8C0u));
+    assert(!node_protocol_peer_changed(true, 0x0204A8C0u, 0x0204A8C0u));
+    assert(node_protocol_peer_changed(true, 0x0204A8C0u, 0x0304A8C0u));
     test_exact_network_layout_and_crc();
     test_decode_and_sequence_tracking();
     test_rejects_corruption_and_invalid_contract();
     test_rejects_stale_and_accepts_boundary_values();
+    test_accepts_new_sequence_epoch_after_sender_reboot();
+    test_rejects_small_out_of_order_uptime_rollback();
     puts("node_protocol tests passed");
     return 0;
 }

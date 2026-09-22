@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from urllib.error import URLError
 from urllib.parse import quote
@@ -12,7 +12,13 @@ from urllib.request import Request, urlopen
 
 import streamlit as st
 
-from safesense.dashboard_view import build_dashboard_view, incident_display, render_section_html, tone
+from safesense.dashboard_view import (
+    build_dashboard_view,
+    incident_display,
+    local_clock,
+    render_section_html,
+    tone,
+)
 
 API_URL = os.getenv("SAFESENSE_API_URL", "http://127.0.0.1:8000").rstrip("/")
 REFRESH_SECONDS = 3
@@ -22,15 +28,6 @@ def api_json(path: str, method: str = "GET") -> dict:
     request = Request(f"{API_URL}{path}", method=method)
     with urlopen(request, timeout=3) as response:
         return json.loads(response.read().decode("utf-8"))
-
-
-def stamp(value: str | None) -> str:
-    if not value:
-        return "--:--:--"
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().strftime("%H:%M:%S")
-    except ValueError:
-        return value
 
 
 def render_section(title: str, rows: list[tuple[str, str]]) -> None:
@@ -77,14 +74,20 @@ def live_workspace() -> None:
     latest = telemetry[0]
     payload = latest.get("payload", {})
     csi = payload.get("csi", {})
-    view = build_dashboard_view(latest)
+    view = build_dashboard_view(latest, now=datetime.now(timezone.utc))
     overall_status = view["overall_status"]
+
+    if not view["telemetry_fresh"]:
+        st.warning(
+            f"No fresh device telemetry ({view['telemetry_age_label']}). "
+            "Connectivity and output states are shown as unknown until a new report arrives."
+        )
 
     st.markdown(
         f"<div class='summary-strip'><div><span>Overall status</span><strong class='{tone(overall_status)}'>{escape(overall_status)}</strong></div>"
         f"<div><span>Device</span><strong>{escape(view['device_id'])}</strong></div>"
         f"<div><span>Source</span><strong class='{tone(view['data_source'])}'>{escape(view['data_source'])}</strong></div>"
-        f"<div><span>Last update</span><strong>{escape(stamp(view['observed_at']))}</strong></div></div>",
+        f"<div><span>Last update</span><strong>{escape(local_clock(view['observed_at']))} · {escape(view['telemetry_age_label'])}</strong></div></div>",
         unsafe_allow_html=True,
     )
 
@@ -99,7 +102,7 @@ def live_workspace() -> None:
     render_section("REVIEW EVIDENCE", view["sections"]["REVIEW EVIDENCE"])
 
     recent_rows = "".join(
-        f"<div class='event-row'><time>{escape(stamp(item.get('observed_at')))}</time><span>{escape(event_description(item))}</span></div>"
+        f"<div class='event-row'><time>{escape(local_clock(item.get('observed_at')))}</time><span>{escape(event_description(item))}</span></div>"
         for item in telemetry[:8]
     )
     st.markdown(f"<section class='review-card events'><h2>RECENT EVENTS</h2>{recent_rows}</section>", unsafe_allow_html=True)

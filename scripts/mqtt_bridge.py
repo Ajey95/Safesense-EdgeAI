@@ -12,6 +12,16 @@ API = os.getenv("SAFESENSE_API_URL", "http://127.0.0.1:8000")
 def broker_address() -> tuple[str, int]:
     return os.environ["SAFESENSE_MQTT_BROKER"], int(os.getenv("SAFESENSE_MQTT_PORT", "1883"))
 
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    """Restore the subscription after every successful broker connection."""
+    del userdata, flags, properties
+    if getattr(reason_code, "is_failure", False):
+        print(f"MQTT connection rejected: {reason_code}")
+        return
+    event_topic = os.getenv("SAFESENSE_MQTT_EVENT_TOPIC", "safesense/+/event")
+    client.subscribe(event_topic, qos=1)
+
 def on_message(client, userdata, message):
     try:
         payload = json.loads(message.payload.decode())
@@ -28,11 +38,10 @@ def on_message(client, userdata, message):
 
 def run() -> None:
     broker, port = broker_address()
-    event_topic = os.getenv("SAFESENSE_MQTT_EVENT_TOPIC", "safesense/+/event")
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    client.on_connect = on_connect
     client.on_message = on_message
     client.connect(broker, port=port)
-    client.subscribe(event_topic, qos=1)
     client.loop_forever()
 
 

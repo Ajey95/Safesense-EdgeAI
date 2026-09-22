@@ -40,6 +40,8 @@ typedef struct {
 } fusion_tracker_t;
 
 fusion_policy_t fusion_default_policy(void);
+/* Until a complete CSI window exists, no activity label is evidence-backed. */
+fusion_activity_t fusion_activity_from_csi(bool window_ready, fusion_activity_t classified_activity);
 fusion_decision_t fusion_evaluate(const fusion_input_t *input, const fusion_policy_t *policy);
 /* Call once per decision. State transitions, not repeated samples, request persistence. */
 bool fusion_tracker_step(fusion_tracker_t *tracker, const fusion_decision_t *decision);
