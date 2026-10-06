@@ -566,3 +566,18 @@ The SafeSense-generated synthetic forecast dataset was published publicly to `Aj
 ## Initial architecture
 
 One local FastAPI service, SQLite initialized from SQLAlchemy metadata, WebSocket dashboard fan-out, and Streamlit dashboard. ESP32 environmental firmware publishes the same validated telemetry envelope over MQTT through the local bridge. Formal versioned database migrations are not implemented and are outside the present review rubric.
+
+## 2026-10-06 GitHub publication
+
+At the user's request, the accumulated SafeSense V1, Forecast Lab, live-view,
+firmware, web, test, documentation and synthetic forecast release sources were
+committed as `6a0aa9c` and pushed to both `v1` and the default `main` branch of
+`Ajey95/Safesense-EdgeAI`. The push was a fast-forward on both branches.
+Local CSI capture JSONL, fetched dataset copies, SQLite files, flash backups,
+generated build/presentation output and transient chart files remain on disk
+and are ignored by Git. The synthetic dataset and released synthetic model
+artifacts were included; they are not real-hazard validation. Before the push,
+46 Python tests and all seven firmware host test programs passed, and the
+staged changes passed `git diff --cached --check`. The physical phone receiver,
+replacement MQ-135 ADC/voltage, and real-hazard forecast validation remain
+open as described above.
