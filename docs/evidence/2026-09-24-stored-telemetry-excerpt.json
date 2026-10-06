@@ -1,0 +1,33 @@
+{
+  "source": "read-only selection from data/safesense.db telemetry_events",
+  "event_id": "tx-4150c72f78e8090a0d86eff7",
+  "received_at": "2026-09-24 03:13:37.050832",
+  "environment": {
+    "temperature_c": 29.96,
+    "humidity_pct": 70.85,
+    "pressure_pa": 97422.02,
+    "gas_resistance_ohm": 24392.82,
+    "gas_valid": true,
+    "heat_stable": true,
+    "gas_adc_raw": 0,
+    "gas_risk": "UNAVAILABLE",
+    "sensor_healthy": true
+  },
+  "csi": {
+    "activity": "UNKNOWN",
+    "confidence": 0.0,
+    "quality": "UNAVAILABLE",
+    "tx_node": "ONLINE",
+    "rx_node": "ONLINE",
+    "packet_rate_hz": 112.15435958446967,
+    "rssi_dbm": -50,
+    "is_fresh": true,
+    "window_ready": true,
+    "window_frames": 100,
+    "selected_subcarriers": 47,
+    "model_version": null,
+    "amplitude_summary": null,
+    "motion_rms": null
+  },
+  "fusion_state": "DEGRADED"
+}

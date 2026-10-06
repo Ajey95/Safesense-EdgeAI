@@ -4,9 +4,21 @@
 #include <string.h>
 #include "bme280_driver.h"
 
-typedef struct { uint8_t registers[256]; } mock_i2c_t;
-static int read_bus(void *ctx, uint8_t address, uint8_t reg, uint8_t *data, size_t len) { (void)address; memcpy(data, &((mock_i2c_t *)ctx)->registers[reg], len); return 0; }
-static int write_bus(void *ctx, uint8_t address, uint8_t reg, const uint8_t *data, size_t len) { (void)address; memcpy(&((mock_i2c_t *)ctx)->registers[reg], data, len); return 0; }
+typedef struct { uint8_t registers[256]; bool forbid_humidity; } mock_i2c_t;
+static int read_bus(void *ctx, uint8_t address, uint8_t reg, uint8_t *data, size_t len) {
+    (void)address;
+    mock_i2c_t *mock = ctx;
+    if (mock->forbid_humidity && (reg == 0xE1 || (reg <= 0xFE && reg + len > 0xFD))) return -1;
+    memcpy(data, &mock->registers[reg], len);
+    return 0;
+}
+static int write_bus(void *ctx, uint8_t address, uint8_t reg, const uint8_t *data, size_t len) {
+    (void)address;
+    mock_i2c_t *mock = ctx;
+    if (mock->forbid_humidity && reg == 0xF2) return -1;
+    memcpy(&mock->registers[reg], data, len);
+    return 0;
+}
 static void delay_bus(void *ctx, uint32_t ms) { (void)ctx; (void)ms; }
 static void le(uint8_t *dst, int value) { dst[0] = (uint8_t)value; dst[1] = (uint8_t)(value >> 8); }
 
@@ -23,8 +35,17 @@ int main(void) {
     bme280_bus_t bus = {read_bus, write_bus, delay_bus, &mock}; bme280_t bme;
     assert(bme280_init(&bme, &bus, BME280_I2C_ADDRESS_LOW, NULL) == BME280_OK);
     bme280_reading_t reading; assert(bme280_read_forced(&bme, &reading, 20) == BME280_OK);
+    assert(reading.humidity_available);
     assert(fabsf(reading.temperature_c - 25.08f) < 0.05f); assert(fabsf(reading.pressure_pa - 100653.25f) < 1.0f);
     assert(reading.humidity_percent >= 0.0f && reading.humidity_percent <= 100.0f);
-    mock.registers[0xD0] = 0x58; assert(bme280_init(&bme, &bus, BME280_I2C_ADDRESS_LOW, NULL) == BME280_ERR_NOT_FOUND);
+    mock.registers[0xD0] = 0x58;
+    mock.forbid_humidity = true;
+    assert(bme280_init(&bme, &bus, BME280_I2C_ADDRESS_LOW, NULL) == BME280_OK);
+    assert(bme280_read_forced(&bme, &reading, 20) == BME280_OK);
+    assert(!reading.humidity_available);
+    assert(fabsf(reading.temperature_c - 25.08f) < 0.05f);
+    assert(fabsf(reading.pressure_pa - 100653.25f) < 1.0f);
+    mock.registers[0xD0] = 0x00;
+    assert(bme280_init(&bme, &bus, BME280_I2C_ADDRESS_LOW, NULL) == BME280_ERR_NOT_FOUND);
     puts("bme280_driver tests passed");
 }

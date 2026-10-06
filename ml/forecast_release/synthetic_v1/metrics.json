@@ -1,0 +1,150 @@
+{
+  "same_family_new_episodes": {
+    "episodes": 100,
+    "windows": 400,
+    "mae_30min_by_channel": {
+      "temperature_c": 0.49799999594688416,
+      "humidity_pct": 0.9350000023841858,
+      "pressure_pa": 3.0829999446868896,
+      "gas_resistance_ohm": 2463.529052734375,
+      "mq135_adc_raw": 22.871000289916992
+    },
+    "persistence_mae_30min": [
+      2.11299991607666,
+      3.259999990463257,
+      19.24799919128418,
+      11459.052734375,
+      130.50100708007812
+    ],
+    "trend_mae_30min": [
+      1.0989999771118164,
+      2.2249999046325684,
+      14.562999725341797,
+      3911.9150390625,
+      62.768001556396484
+    ],
+    "forecast_breach": {
+      "tp": 122,
+      "fp": 15,
+      "fn": 25,
+      "tn": 238,
+      "precision": 0.891,
+      "recall": 0.83
+    },
+    "persistence_breach": {
+      "tp": 9,
+      "fp": 0,
+      "fn": 138,
+      "tn": 253,
+      "precision": 1.0,
+      "recall": 0.061
+    },
+    "trend_breach": {
+      "tp": 111,
+      "fp": 5,
+      "fn": 36,
+      "tn": 248,
+      "precision": 0.957,
+      "recall": 0.755
+    }
+  },
+  "heldout_families": {
+    "episodes": 160,
+    "windows": 640,
+    "mae_30min_by_channel": {
+      "temperature_c": 1.1319999694824219,
+      "humidity_pct": 1.4229999780654907,
+      "pressure_pa": 3.249000072479248,
+      "gas_resistance_ohm": 6400.7421875,
+      "mq135_adc_raw": 37.952999114990234
+    },
+    "persistence_mae_30min": [
+      1.9600000381469727,
+      3.0399999618530273,
+      19.423999786376953,
+      12415.33984375,
+      125.11199951171875
+    ],
+    "trend_mae_30min": [
+      1.8839999437332153,
+      2.4639999866485596,
+      15.329999923706055,
+      9413.314453125,
+      51.47700119018555
+    ],
+    "forecast_breach": {
+      "tp": 138,
+      "fp": 31,
+      "fn": 30,
+      "tn": 441,
+      "precision": 0.817,
+      "recall": 0.821
+    },
+    "persistence_breach": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 165,
+      "tn": 472,
+      "precision": 1.0,
+      "recall": 0.018
+    },
+    "trend_breach": {
+      "tp": 107,
+      "fp": 28,
+      "fn": 61,
+      "tn": 444,
+      "precision": 0.793,
+      "recall": 0.637
+    }
+  },
+  "heldout_one_decision_per_episode": {
+    "episodes": 160,
+    "windows": 160,
+    "mae_30min_by_channel": {
+      "temperature_c": 1.0190000534057617,
+      "humidity_pct": 1.2130000591278076,
+      "pressure_pa": 2.9079999923706055,
+      "gas_resistance_ohm": 4974.64208984375,
+      "mq135_adc_raw": 35.09700012207031
+    },
+    "persistence_mae_30min": [
+      1.7039999961853027,
+      3.1700000762939453,
+      20.10700035095215,
+      11220.609375,
+      126.48100280761719
+    ],
+    "trend_mae_30min": [
+      1.7669999599456787,
+      2.257999897003174,
+      15.904999732971191,
+      8368.9716796875,
+      47.26599884033203
+    ],
+    "forecast_breach": {
+      "tp": 15,
+      "fp": 5,
+      "fn": 4,
+      "tn": 136,
+      "precision": 0.75,
+      "recall": 0.789
+    },
+    "persistence_breach": {
+      "tp": 0,
+      "fp": 0,
+      "fn": 19,
+      "tn": 141,
+      "precision": null,
+      "recall": 0.0
+    },
+    "trend_breach": {
+      "tp": 12,
+      "fp": 3,
+      "fn": 7,
+      "tn": 138,
+      "precision": 0.8,
+      "recall": 0.632
+    }
+  },
+  "note": "Synthetic simulator only; no real-world hazard or device performance claim."
+}

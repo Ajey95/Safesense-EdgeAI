@@ -1,0 +1,15 @@
+menu "SafeSense RX gateway"
+
+config SAFESENSE_RX_AP_SSID
+    string "RX Wi-Fi AP SSID"
+    default "SafeSense-RX-V1"
+
+config SAFESENSE_RX_AP_PASSWORD
+    string "RX Wi-Fi AP password (demo only; change outside lab)"
+    default "SafeSenseDemo24"
+
+config SAFESENSE_RX_DEVICE_ID
+    string "RX device ID"
+    default "safesense-rx-01"
+
+endmenu

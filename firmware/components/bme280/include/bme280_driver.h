@@ -19,6 +19,7 @@ extern "C" {
 #define BME280_I2C_ADDRESS_LOW  0x76u
 #define BME280_I2C_ADDRESS_HIGH 0x77u
 #define BME280_CHIP_ID          0x60u
+#define BMP280_CHIP_ID          0x58u
 
 typedef enum {
     BME280_OK = 0,
@@ -78,6 +79,7 @@ typedef struct {
     float temperature_c;
     float pressure_pa;
     float humidity_percent;
+    bool humidity_available;
 } bme280_reading_t;
 
 typedef struct {
@@ -96,6 +98,7 @@ typedef struct {
     bme280_calibration_t calibration;
     bme280_config_t config;
     bool initialized;
+    bool humidity_available;
 } bme280_t;
 
 bme280_config_t bme280_default_config(void);

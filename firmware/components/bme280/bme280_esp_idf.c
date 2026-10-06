@@ -22,7 +22,8 @@ static int bme280_esp_idf_write(void *context, uint8_t address, uint8_t reg, con
 
 static void bme280_esp_idf_delay(void *context, uint32_t milliseconds) {
     (void)context;
-    vTaskDelay(pdMS_TO_TICKS(milliseconds));
+    const TickType_t ticks = pdMS_TO_TICKS(milliseconds);
+    vTaskDelay(ticks ? ticks : 1);
 }
 
 void bme280_esp_idf_make_bus(bme280_bus_t *out_bus, bme280_esp_idf_bus_t *idf_bus) {

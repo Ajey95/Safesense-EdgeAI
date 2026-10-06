@@ -36,3 +36,22 @@ class Incident(Base):
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     acknowledged_by: Mapped[str | None] = mapped_column(String(120))
+
+
+class DeliveryReceipt(Base):
+    """Reports from laptop transport processes, keyed by exact event ID and hop."""
+
+    __tablename__ = "delivery_receipts"
+    __table_args__ = (UniqueConstraint("event_id", "kind", name="uq_delivery_receipt_hop"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    details: Mapped[dict] = mapped_column(JSON, nullable=False)
+
+
+class BridgeHeartbeat(Base):
+    __tablename__ = "bridge_heartbeats"
+    name: Mapped[str] = mapped_column(String(40), primary_key=True)
+    reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)

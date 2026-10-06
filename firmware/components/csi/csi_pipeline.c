@@ -6,13 +6,19 @@ static const int8_t raw_order[64] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17
 static bool is_data_subcarrier(int8_t index) { return index >= -26 && index <= 26 && index != 0 && index != -21 && index != -7 && index != 7 && index != 21; }
 
 void csi_pipeline_init(csi_pipeline_t *pipeline) { if (pipeline) memset(pipeline, 0, sizeof(*pipeline)); }
-csi_status_t csi_pipeline_push(csi_pipeline_t *pipeline, const int8_t *iq, size_t length, bool first_word_invalid, bool *window_ready) {
+static csi_status_t push_frame(csi_pipeline_t *pipeline, const int8_t *iq, size_t length,
+                               bool first_word_invalid, bool mask_first_word, bool *window_ready) {
     if (!pipeline || !iq || !window_ready) return CSI_ERR_ARGUMENT;
     *window_ready = false;
-    if (first_word_invalid || length != CSI_RAW_IQ_BYTES) return CSI_ERR_INVALID_FRAME;
+    if ((first_word_invalid && !mask_first_word) || length != CSI_RAW_IQ_BYTES) return CSI_ERR_INVALID_FRAME;
     uint8_t output = 0;
     for (uint8_t source = 0; source < 64; source++) {
         if (!is_data_subcarrier(raw_order[source])) continue;
+        if (first_word_invalid && source == 1) {
+            pipeline->frames[pipeline->write_index][output++] = 0.0f;
+            continue;
+        }
+
         const float imaginary = iq[source * 2];
         const float real = iq[source * 2 + 1];
         pipeline->frames[pipeline->write_index][output++] = sqrtf(real * real + imaginary * imaginary);
@@ -23,6 +29,14 @@ csi_status_t csi_pipeline_push(csi_pipeline_t *pipeline, const int8_t *iq, size_
     pipeline->since_window++;
     if (pipeline->count == CSI_WINDOW_FRAMES && pipeline->since_window >= CSI_WINDOW_STRIDE) { pipeline->since_window = 0; *window_ready = true; }
     return CSI_OK;
+}
+csi_status_t csi_pipeline_push(csi_pipeline_t *pipeline, const int8_t *iq, size_t length,
+                                bool first_word_invalid, bool *window_ready) {
+    return push_frame(pipeline, iq, length, first_word_invalid, false, window_ready);
+}
+csi_status_t csi_pipeline_push_masked(csi_pipeline_t *pipeline, const int8_t *iq, size_t length,
+                                       bool first_word_invalid, bool *window_ready) {
+    return push_frame(pipeline, iq, length, first_word_invalid, true, window_ready);
 }
 csi_status_t csi_pipeline_copy_window(const csi_pipeline_t *pipeline, float output[CSI_WINDOW_FRAMES][CSI_DATA_SUBCARRIERS]) {
     if (!pipeline || !output || pipeline->count != CSI_WINDOW_FRAMES) return CSI_ERR_ARGUMENT;

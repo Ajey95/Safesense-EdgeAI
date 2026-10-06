@@ -5,25 +5,72 @@
 
 static void slot_key(uint8_t slot, char key[8]) { snprintf(key, 8, "e%02u", slot); }
 static int save_meta(delivery_queue_t *queue) { return nvs_set_u8(queue->handle, "head", queue->head) == ESP_OK && nvs_set_u8(queue->handle, "count", queue->count) == ESP_OK && nvs_commit(queue->handle) == ESP_OK ? 0 : -1; }
-int delivery_queue_init(delivery_queue_t *queue) {
-    if (!queue) return -1; memset(queue, 0, sizeof(*queue));
-    esp_err_t result = nvs_flash_init(); if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) { nvs_flash_erase(); result = nvs_flash_init(); }
+int delivery_queue_init_named(delivery_queue_t *queue, const char *nvs_namespace) {
+    if (!queue || !nvs_namespace || !nvs_namespace[0] || strlen(nvs_namespace) > 15) return -1;
+    memset(queue, 0, sizeof(*queue));
+    const esp_err_t result = nvs_flash_init();
     if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return -1;
-    if (nvs_open("ssdeliver", NVS_READWRITE, &queue->handle) != ESP_OK) return -1;
+    if (nvs_open(nvs_namespace, NVS_READWRITE, &queue->handle) != ESP_OK) return -1;
     (void)nvs_get_u8(queue->handle, "head", &queue->head); (void)nvs_get_u8(queue->handle, "count", &queue->count);
     if (queue->head >= DELIVERY_QUEUE_CAPACITY || queue->count > DELIVERY_QUEUE_CAPACITY) { queue->head = queue->count = 0; return save_meta(queue); }
     return 0;
+}
+int delivery_queue_init(delivery_queue_t *queue) {
+    const esp_err_t result = nvs_flash_init();
+    if (result == ESP_ERR_NVS_NO_FREE_PAGES || result == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        if (nvs_flash_erase() != ESP_OK) return -1;
+    } else if (result != ESP_OK && result != ESP_ERR_INVALID_STATE) return -1;
+    return delivery_queue_init_named(queue, "ssdeliver");
 }
 int delivery_queue_enqueue(delivery_queue_t *queue, const delivery_record_t *record) {
     if (!queue || !record || !record->event_id[0] || !record->payload[0] || queue->count == DELIVERY_QUEUE_CAPACITY) return -1;
     char key[8]; slot_key((queue->head + queue->count) % DELIVERY_QUEUE_CAPACITY, key);
     /* Persist payload before publishing or advancing queue metadata. */
     if (nvs_set_blob(queue->handle, key, record, sizeof(*record)) != ESP_OK || nvs_commit(queue->handle) != ESP_OK) return -1;
-    queue->count++; return save_meta(queue);
+    queue->count++;
+    if (save_meta(queue) != 0) {
+        queue->count--;
+        return -1;
+    }
+    return 0;
 }
 int delivery_queue_peek(delivery_queue_t *queue, delivery_record_t *record) {
-    if (!queue || !record || queue->count == 0) return -1; char key[8]; size_t length = sizeof(*record); slot_key(queue->head, key);
+    if (!queue || !record || queue->count == 0) return -1;
+    char key[8]; size_t length = sizeof(*record); slot_key(queue->head, key);
     return nvs_get_blob(queue->handle, key, record, &length) == ESP_OK && length == sizeof(*record) ? 0 : -1;
+}
+int delivery_queue_contains(delivery_queue_t *queue, const char *event_id) {
+    if (!queue || !event_id || !event_id[0]) return -1;
+    for (uint8_t offset = 0; offset < queue->count; ++offset) {
+        char key[8]; slot_key((queue->head + offset) % DELIVERY_QUEUE_CAPACITY, key);
+        delivery_record_t record; size_t length = sizeof(record);
+        if (nvs_get_blob(queue->handle, key, &record, &length) != ESP_OK || length != sizeof(record)) return -1;
+        if (strcmp(record.event_id, event_id) == 0) return 1;
+    }
+    return 0;
+}
+int delivery_queue_repair_missing_head(delivery_queue_t *queue) {
+    if (!queue) return -1;
+    const uint8_t previous_head = queue->head, previous_count = queue->count;
+    int skipped = 0;
+    while (queue->count > 0) {
+        char key[8]; slot_key(queue->head, key);
+        delivery_record_t record; size_t length = sizeof(record);
+        const esp_err_t status = nvs_get_blob(queue->handle, key, &record, &length);
+        if (status == ESP_OK && length == sizeof(record)) break;
+        if (status != ESP_ERR_NVS_NOT_FOUND) {
+            queue->head = previous_head; queue->count = previous_count;
+            return -1;
+        }
+        queue->head = (queue->head + 1) % DELIVERY_QUEUE_CAPACITY;
+        queue->count--;
+        skipped++;
+    }
+    if (skipped && save_meta(queue) != 0) {
+        queue->head = previous_head; queue->count = previous_count;
+        return -1;
+    }
+    return skipped;
 }
 int delivery_queue_ack_head(delivery_queue_t *queue, const char *event_id) {
     delivery_record_t record; if (!queue || !event_id || delivery_queue_peek(queue, &record) != 0 || strcmp(record.event_id, event_id) != 0) return -1;

@@ -1,0 +1,46 @@
+menu "SafeSense TX node"
+
+config SAFESENSE_TX_WIFI_SSID
+    string "Wi-Fi SSID"
+    default ""
+
+config SAFESENSE_TX_WIFI_PASSWORD
+    string "Wi-Fi password"
+    default ""
+
+config SAFESENSE_TX_DEVICE_ID
+    string "TX device ID"
+    default "safesense-tx-01"
+
+config SAFESENSE_TX_RX_HTTP_URL
+    string "RX HTTP environment endpoint URL"
+    default ""
+
+config SAFESENSE_TX_RX_UDP_IP
+    string "RX IPv4 address for CSI probe packets"
+    default ""
+
+config SAFESENSE_TX_CSI_PROBE_INTERVAL_MS
+    int "CSI UDP probe interval in milliseconds"
+    range 1 1000
+    default 20
+
+config SAFESENSE_TX_SAMPLE_INTERVAL_SECONDS
+    int "Sensor sample interval in seconds"
+    range 2 3600
+    default 10
+
+config SAFESENSE_FORECAST_ROOM
+    int "Synthetic forecast model room index (0 cold, 1 lab, 2 classroom, 3 bakery, 4 server)"
+    range 0 4
+    default 0
+
+config SAFESENSE_TX_SCENARIO_SERIAL_DEMO
+    bool "Enable USB serial synthetic scenario playback mode"
+    default n
+    help
+        Replaces real sensor sampling with labelled synthetic readings sent on
+        UART0 by the dashboard. The fault flag skips the TX HTTP attempt; it
+        does not physically turn the Wi-Fi radio off. For demonstrations only.
+
+endmenu

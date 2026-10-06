@@ -44,18 +44,21 @@ static bme280_status_t wait_for_clear(bme280_t *device, uint8_t bit, uint32_t ti
 
 static bme280_status_t read_calibration(bme280_t *device) {
     uint8_t first[26], second[7];
-    bme280_status_t result = read_registers(device, REG_CALIB_00, first, sizeof(first));
-    if (result != BME280_OK) return result;
-    result = read_registers(device, REG_CALIB_26, second, sizeof(second));
+    bme280_status_t result = read_registers(device, REG_CALIB_00, first,
+                                           device->humidity_available ? sizeof(first) : 24);
     if (result != BME280_OK) return result;
     bme280_calibration_t *c = &device->calibration;
     c->t1 = u16le(&first[0]); c->t2 = s16le(&first[2]); c->t3 = s16le(&first[4]);
     c->p1 = u16le(&first[6]); c->p2 = s16le(&first[8]); c->p3 = s16le(&first[10]); c->p4 = s16le(&first[12]);
     c->p5 = s16le(&first[14]); c->p6 = s16le(&first[16]); c->p7 = s16le(&first[18]); c->p8 = s16le(&first[20]); c->p9 = s16le(&first[22]);
-    c->h1 = first[25]; c->h2 = s16le(&second[0]); c->h3 = second[2];
-    c->h4 = sign_extend_12((uint16_t)((second[3] << 4) | (second[4] & 0x0Fu)));
-    c->h5 = sign_extend_12((uint16_t)((second[5] << 4) | (second[4] >> 4)));
-    c->h6 = (int8_t)second[6];
+    if (device->humidity_available) {
+        result = read_registers(device, REG_CALIB_26, second, sizeof(second));
+        if (result != BME280_OK) return result;
+        c->h1 = first[25]; c->h2 = s16le(&second[0]); c->h3 = second[2];
+        c->h4 = sign_extend_12((uint16_t)((second[3] << 4) | (second[4] & 0x0Fu)));
+        c->h5 = sign_extend_12((uint16_t)((second[5] << 4) | (second[4] >> 4)));
+        c->h6 = (int8_t)second[6];
+    }
     return c->t1 == 0 || c->p1 == 0 ? BME280_ERR_CALIBRATION : BME280_OK;
 }
 
@@ -68,8 +71,10 @@ bme280_status_t bme280_configure(bme280_t *device, const bme280_config_t *config
     bme280_status_t result = bme280_sleep(device);
     if (result != BME280_OK) return result;
     /* ctrl_hum must be written before ctrl_meas for humidity oversampling to latch. */
-    result = write_register(device, REG_CTRL_HUM, (uint8_t)config->humidity_oversampling);
-    if (result != BME280_OK) return result;
+    if (device->humidity_available) {
+        result = write_register(device, REG_CTRL_HUM, (uint8_t)config->humidity_oversampling);
+        if (result != BME280_OK) return result;
+    }
     result = write_register(device, REG_CONFIG, (uint8_t)((config->standby << 5) | (config->filter << 2)));
     if (result != BME280_OK) return result;
     result = write_register(device, REG_CTRL_MEAS, (uint8_t)((config->temperature_oversampling << 5) | (config->pressure_oversampling << 2)));
@@ -83,7 +88,8 @@ bme280_status_t bme280_init(bme280_t *device, const bme280_bus_t *bus, uint8_t a
     uint8_t chip_id;
     bme280_status_t result = read_registers(device, REG_CHIP_ID, &chip_id, 1);
     if (result != BME280_OK) return result;
-    if (chip_id != BME280_CHIP_ID) return BME280_ERR_NOT_FOUND;
+    if (chip_id != BME280_CHIP_ID && chip_id != BMP280_CHIP_ID) return BME280_ERR_NOT_FOUND;
+    device->humidity_available = chip_id == BME280_CHIP_ID;
     result = write_register(device, REG_RESET, RESET_COMMAND);
     if (result != BME280_OK) return result;
     delay_ms(device, 2);
@@ -102,13 +108,13 @@ bme280_status_t bme280_sleep(bme280_t *device) {
 }
 
 static bme280_status_t read_compensated(bme280_t *device, bme280_reading_t *reading) {
-    uint8_t data[8];
-    bme280_status_t result = read_registers(device, REG_DATA, data, sizeof(data));
+    uint8_t data[8] = {0};
+    bme280_status_t result = read_registers(device, REG_DATA, data,
+                                           device->humidity_available ? sizeof(data) : 6);
     if (result != BME280_OK) return result;
     const bme280_calibration_t *c = &device->calibration;
     int32_t adc_p = ((int32_t)data[0] << 12) | ((int32_t)data[1] << 4) | (data[2] >> 4);
     int32_t adc_t = ((int32_t)data[3] << 12) | ((int32_t)data[4] << 4) | (data[5] >> 4);
-    int32_t adc_h = ((int32_t)data[6] << 8) | data[7];
     double v1 = ((double)adc_t / 16384.0 - (double)c->t1 / 1024.0) * c->t2;
     double v2 = (((double)adc_t / 131072.0 - (double)c->t1 / 8192.0) * ((double)adc_t / 131072.0 - (double)c->t1 / 8192.0)) * c->t3;
     double t_fine = v1 + v2;
@@ -125,14 +131,19 @@ static bme280_status_t read_compensated(bme280_t *device, bme280_reading_t *read
     v1 = c->p9 * pressure * pressure / 2147483648.0;
     v2 = pressure * c->p8 / 32768.0;
     pressure += (v1 + v2 + c->p7) / 16.0;
-    double humidity = t_fine - 76800.0;
-    humidity = (adc_h - (c->h4 * 64.0 + c->h5 / 16384.0 * humidity)) * (c->h2 / 65536.0 * (1.0 + c->h6 / 67108864.0 * humidity * (1.0 + c->h3 / 67108864.0 * humidity)));
-    humidity *= 1.0 - c->h1 * humidity / 524288.0;
-    if (humidity < 0.0) humidity = 0.0;
-    if (humidity > 100.0) humidity = 100.0;
     reading->temperature_c = (float)temperature;
     reading->pressure_pa = (float)pressure;
-    reading->humidity_percent = (float)humidity;
+    reading->humidity_available = device->humidity_available;
+    reading->humidity_percent = 0.0f;
+    if (device->humidity_available) {
+        const int32_t adc_h = ((int32_t)data[6] << 8) | data[7];
+        double humidity = t_fine - 76800.0;
+        humidity = (adc_h - (c->h4 * 64.0 + c->h5 / 16384.0 * humidity)) * (c->h2 / 65536.0 * (1.0 + c->h6 / 67108864.0 * humidity * (1.0 + c->h3 / 67108864.0 * humidity)));
+        humidity *= 1.0 - c->h1 * humidity / 524288.0;
+        if (humidity < 0.0) humidity = 0.0;
+        if (humidity > 100.0) humidity = 100.0;
+        reading->humidity_percent = (float)humidity;
+    }
     return BME280_OK;
 }
 

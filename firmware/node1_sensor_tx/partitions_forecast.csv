@@ -1,0 +1,6 @@
+# Same NVS and factory offsets as the previous single-app table; larger app.
+# Fits a 2 MB flash without erasing the TX-owned queue on upgrade.
+# Name, Type, SubType, Offset, Size, Flags
+nvs, data, nvs, , 0x6000,
+phy_init, data, phy, , 0x1000,
+factory, app, factory, , 0x1A0000,

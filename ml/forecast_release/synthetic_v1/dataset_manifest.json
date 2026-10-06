@@ -1,0 +1,248 @@
+{
+  "version": "synthetic_v1",
+  "sampling": "one synthetic minute per row",
+  "history_minutes": 60,
+  "forecast_minutes": 30,
+  "training_examples": "complete episodes, no window-level random train/test split",
+  "sensor_semantics": {
+    "gas_resistance_ohm": "non-specific BME680 gas response",
+    "mq135_adc_raw": "uncalibrated raw ADC; not ppm or chemical identity"
+  },
+  "room_demo_ranges": {
+    "Cold storage": {
+      "temperature_c": [
+        -19,
+        -12
+      ],
+      "humidity_pct": [
+        25,
+        65
+      ],
+      "gas_resistance_ohm": [
+        45000,
+        200000
+      ]
+    },
+    "Laboratory": {
+      "temperature_c": [
+        18,
+        27
+      ],
+      "humidity_pct": [
+        25,
+        65
+      ],
+      "gas_resistance_ohm": [
+        45000,
+        200000
+      ]
+    },
+    "Classroom": {
+      "temperature_c": [
+        19,
+        29
+      ],
+      "humidity_pct": [
+        25,
+        70
+      ],
+      "gas_resistance_ohm": [
+        42000,
+        200000
+      ]
+    },
+    "Bakery": {
+      "temperature_c": [
+        19,
+        34
+      ],
+      "humidity_pct": [
+        20,
+        70
+      ],
+      "gas_resistance_ohm": [
+        40000,
+        200000
+      ]
+    },
+    "Server room": {
+      "temperature_c": [
+        17,
+        27
+      ],
+      "humidity_pct": [
+        20,
+        65
+      ],
+      "gas_resistance_ohm": [
+        45000,
+        200000
+      ]
+    }
+  },
+  "scenarios": [
+    {
+      "key": "freezer_defrost",
+      "title": "Defrost cycle that fails to settle",
+      "room": "Cold storage",
+      "family": "defrost",
+      "split": "train",
+      "story": "A normal defrost pulse slowly becomes a persistent warming trend.",
+      "episodes": 60
+    },
+    {
+      "key": "door_ajar",
+      "title": "A loading door left ajar",
+      "room": "Cold storage",
+      "family": "air_exchange",
+      "split": "train",
+      "story": "Warm, moist air enters in small bursts while the temperature still looks acceptable.",
+      "episodes": 60
+    },
+    {
+      "key": "lab_cleanup",
+      "title": "Lab cleanup vapor build-up",
+      "room": "Laboratory",
+      "family": "vapor",
+      "split": "train",
+      "story": "A cleaning task raises a broad gas response even while temperature stays ordinary.",
+      "episodes": 60
+    },
+    {
+      "key": "lab_hvac",
+      "title": "Lab extraction weakens",
+      "room": "Laboratory",
+      "family": "ventilation",
+      "split": "train",
+      "story": "Residual vapors accumulate after an otherwise routine process.",
+      "episodes": 60
+    },
+    {
+      "key": "class_busy",
+      "title": "Crowded classroom with reduced air exchange",
+      "room": "Classroom",
+      "family": "occupancy",
+      "split": "train",
+      "story": "Heat and humidity rise together during a long session.",
+      "episodes": 60
+    },
+    {
+      "key": "class_clean",
+      "title": "Cleaning after class",
+      "room": "Classroom",
+      "family": "cleaning",
+      "split": "train",
+      "story": "A short cleaning pulse leaves a slowly fading gas-sensor response.",
+      "episodes": 60
+    },
+    {
+      "key": "oven_shift",
+      "title": "Bakery oven shift runs long",
+      "room": "Bakery",
+      "family": "process_heat",
+      "split": "train",
+      "story": "A sustained heat load competes with the room cooling cycle.",
+      "episodes": 60
+    },
+    {
+      "key": "steam_clean",
+      "title": "Bakery steam cleaning overlap",
+      "room": "Bakery",
+      "family": "steam",
+      "split": "train",
+      "story": "A humid cleaning operation overlaps with residual process heat.",
+      "episodes": 60
+    },
+    {
+      "key": "server_cooling",
+      "title": "Server cooling loses capacity",
+      "room": "Server room",
+      "family": "cooling",
+      "split": "train",
+      "story": "The rack aisle warms slowly despite a temporary cooling recovery.",
+      "episodes": 60
+    },
+    {
+      "key": "server_battery",
+      "title": "Battery service disturbance",
+      "room": "Server room",
+      "family": "equipment",
+      "split": "train",
+      "story": "Service work adds a small heat load and a non-specific sensor response.",
+      "episodes": 60
+    },
+    {
+      "key": "freezer_rebound",
+      "title": "Compressor recovers, then warming rebounds",
+      "room": "Cold storage",
+      "family": "rebound",
+      "split": "test",
+      "story": "Readings briefly improve after a cooling cycle, then drift upward again.",
+      "episodes": 20
+    },
+    {
+      "key": "lab_two_stage",
+      "title": "Two-stage lab process",
+      "room": "Laboratory",
+      "family": "two_stage",
+      "split": "test",
+      "story": "Mild warming precedes a delayed broad gas-sensor rise.",
+      "episodes": 20
+    },
+    {
+      "key": "class_afterhours",
+      "title": "After-hours classroom cleaning",
+      "room": "Classroom",
+      "family": "afterhours",
+      "split": "test",
+      "story": "The room cools as an unrelated cleaning response slowly grows.",
+      "episodes": 20
+    },
+    {
+      "key": "bakery_restart",
+      "title": "Bakery restart after cleaning",
+      "room": "Bakery",
+      "family": "restart",
+      "split": "test",
+      "story": "Heat, moisture and a gas-sensor response overlap on different time scales.",
+      "episodes": 20
+    },
+    {
+      "key": "server_airflow",
+      "title": "Server aisle airflow recirculation",
+      "room": "Server room",
+      "family": "recirculation",
+      "split": "test",
+      "story": "A slow thermal rise is masked by a short-lived cooling dip.",
+      "episodes": 20
+    },
+    {
+      "key": "cold_load",
+      "title": "Warm pallet and repeated door openings",
+      "room": "Cold storage",
+      "family": "load_interaction",
+      "split": "test",
+      "story": "A warm load and wet outside air combine after several small door events.",
+      "episodes": 20
+    },
+    {
+      "key": "lab_flush",
+      "title": "Lab ventilation flush followed by accumulation",
+      "room": "Laboratory",
+      "family": "flush_rebound",
+      "split": "test",
+      "story": "A temporary clean-air flush hides a continuing source.",
+      "episodes": 20
+    },
+    {
+      "key": "bakery_cooling",
+      "title": "Bakery cooling bottleneck",
+      "room": "Bakery",
+      "family": "cooldown",
+      "split": "test",
+      "story": "Heat falls initially but humidity and sensor response keep rising.",
+      "episodes": 20
+    }
+  ],
+  "limitations": "Entirely synthetic and not calibrated or validated for real safety decisions."
+}

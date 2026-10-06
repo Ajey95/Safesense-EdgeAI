@@ -1,0 +1,13 @@
+SafeSense V1 physical TX/RX capture, 2026-09-24
+COM11 = TX; COM12 = RX. Selected verbatim lines from one simultaneous capture.
+
+TX: I (580) safesense_tx: Restored 12 pending TX record(s) from NVS
+TX: I (590) safesense_tx: Custom BME680 initialized at 0x76 on GPIO21/GPIO22
+RX: I (545) safesense_rx: Restored 4 pending RX record(s) from NVS
+TX: I (10960) safesense_tx: BME680 T=30.06 C RH=71.15 % P=97419.88 Pa gas=0 ohm valid=1 stable=0
+TX: I (10970) safesense_tx: MQ-135 AO GPIO34 raw ADC=0 (uncalibrated)
+TX: W (10970) safesense_tx: MQ-135 ADC is zero; electrical signal/heater not verified
+RX: I (11325) safesense_rx: HTTP TX accepted event=tx-b18144bce3dec104b6e43f8e from=safesense-tx-01 pending=16
+TX: I (11550) safesense_tx: RX accepted event=tx-b18144bce3dec104b6e43f8e pending=0
+
+The shown BME680 gas sample was still warming (stable=0), so gas=0 is not a valid gas measurement. The MQ-135 ADC value is uncalibrated and its electrical output remains unverified.

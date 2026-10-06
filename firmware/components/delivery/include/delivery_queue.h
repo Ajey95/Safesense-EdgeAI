@@ -9,7 +9,12 @@
 typedef struct { char event_id[DELIVERY_EVENT_ID_MAX]; char payload[DELIVERY_PAYLOAD_MAX]; } delivery_record_t;
 typedef struct { nvs_handle_t handle; uint8_t head, count; } delivery_queue_t;
 int delivery_queue_init(delivery_queue_t *queue);
+int delivery_queue_init_named(delivery_queue_t *queue, const char *nvs_namespace);
 int delivery_queue_enqueue(delivery_queue_t *queue, const delivery_record_t *record);
 int delivery_queue_peek(delivery_queue_t *queue, delivery_record_t *record);
+/* 1 found, 0 absent, -1 on corrupt/unreadable queued slot. */
+int delivery_queue_contains(delivery_queue_t *queue, const char *event_id);
+/* Skip only NVS_NOT_FOUND head slots after interrupted delivery. Returns skipped count or -1. */
+int delivery_queue_repair_missing_head(delivery_queue_t *queue);
 int delivery_queue_ack_head(delivery_queue_t *queue, const char *event_id);
 uint8_t delivery_queue_count(const delivery_queue_t *queue);

@@ -1,6 +1,9 @@
 # SafeSense EdgeAI
 
-> **Status: software-complete academic Edge AI / IoT prototype; hardware validation pending**
+> **V1 live prototype:** Two classic ESP32 boards have delivered real BME680
+> and CSI telemetry end-to-end. The original MQ-135 repeatedly read ADC 0;
+> the user reports a working replacement module that needs separate recorded
+> ADC/voltage evidence. No activity model or calibrated gas alarm is released.
 
 SafeSense combines environmental sensing, Wi-Fi CSI activity context, deterministic safety fusion, persistent ESP32 delivery, a local FastAPI backend, and a Streamlit operations dashboard. The design is privacy-oriented and fail-closed: uncertain CSI is never treated as proof that a room is vacant, and environmental danger cannot be suppressed by the ML result.
 
@@ -10,16 +13,20 @@ SafeSense combines environmental sensing, Wi-Fi CSI activity context, determinis
 
 More detail: [architecture](docs/architecture.md), [implementation progress](docs/progress.md), and [review readiness](docs/review_readiness.md).
 
-## Implemented software
+The new [Forecast Lab](docs/forecast_lab.md) provides a synthetic, held-out-scenario 30-minute TinyML demonstration, a reference-matched themed dashboard at `/forecast`, and a separately labelled physical TX replay path with Wi-Fi and nearby-laptop Bluetooth alert receipts. Run `uvicorn safesense.main:app --host 127.0.0.1 --port 8000` and open `http://127.0.0.1:8000/forecast`.
 
-- Custom register-level BME280 I2C driver with factory-calibration decoding and compensation equations.
-- ESP32 NVS telemetry queue with restore-after-reboot behavior.
-- MQTT QoS 1 delivery retained until an exact backend `ACCEPTED` acknowledgement.
-- ESP32 CSI capture and preprocessing: I/Q amplitude, 48 data carriers, invalid-frame rejection, and 100-frame windows.
+The [Live Hardware view](docs/live_hardware_integration.md) at `/forecast?view=live` shows TX readings once the RX HTTP bridge forwards them, with exact event IDs and separate Wi-Fi, RX, backend, and nearby-laptop Bluetooth receipt states. It excludes synthetic scenario replay and labels disconnected or stale readings.
+
+## Current V1 path
+
+- Custom register-level BME680 driver on TX (I2C `0x76`, GPIO21/22), with live temperature, humidity, pressure and gas resistance.
+- MQ-135 AO through a 10 kΩ / 10 kΩ divider to TX GPIO34. The original module repeatedly read raw ADC 0; a replacement is reported working and must be recorded separately. Raw ADC is not ppm or a selective gas alarm.
+- TX and RX have separate NVS queues. TX→RX uses HTTP JSON plus exact event-ID ACK; a laptop bridge forwards RX→local FastAPI and ACKs RX only after matching backend acceptance.
+- RX receives TX UDP probes and captures CSI. On the classic ESP32 the first four CSI bytes were invalid on every observed packet, so RX masks the affected carrier and reports 47 measured subcarriers in 100-frame diagnostic windows. Activity stays `UNKNOWN`.
 - Deterministic edge and backend fusion with explicit `UNKNOWN`, `UNAVAILABLE`, and `DEGRADED` behavior.
 - FastAPI ingestion, validation, idempotency, SQLite persistence, incidents, acknowledgement, and WebSocket fan-out.
-- Streamlit dashboard covering Environment, Wi-Fi CSI, Human Context, System health, and Recent Events.
-- Fully INT8 TinyML conversion and guarded TFLite Micro runtime. The current public-data candidate remains rejected by the accuracy gate and is not enabled in firmware.
+- Streamlit dashboard with live JSON, HTTP/NVS communication evidence, and a prominent MQ-135 zero-signal warning.
+- The older BME280/MQTT applications remain in the repository but are not the current two-board V1 demo. The public-data TinyML candidate remains rejected by its accuracy gate.
 
 ## Run locally
 
@@ -45,13 +52,21 @@ $env:PYTHONPATH = "src"
 python scripts\replay_csi.py
 ```
 
+For the physical two-board V1 demo, see [RX setup](firmware/node2_csi_gateway/README.md)
+and [TX setup](firmware/node1_sensor_tx/README.md). The laptop must temporarily
+join RX's Wi-Fi AP to run `scripts/run_rx_bridge_demo.ps1 -RestoreWifiProfile <profile-name>`; that bounded script
+restores the named laptop profile afterward. It is not an
+unattended continuous bridge.
+
 ## Repository structure
 
 ```text
 dashboard/                    Streamlit review dashboard
 docs/                         Architecture, safety and review evidence
 firmware/components/          Reusable ESP-IDF drivers and edge components
-firmware/environmental_node/  BME280 → NVS → MQTT application
+firmware/node1_sensor_tx/    Current classic-ESP32 BME680/MQ sensor/TX application
+firmware/node2_csi_gateway/ Current classic-ESP32 CSI/RX HTTP/NVS gateway
+firmware/environmental_node/  Older BME280 → NVS → MQTT prototype
 firmware/csi_transmitter/     Controlled Wi-Fi CSI traffic source
 firmware/csi_receiver/        CSI capture, preprocessing and guarded inference
 ml/                           Preprocessing, augmentation, training and release gates
@@ -67,7 +82,7 @@ pytest
 mingw32-make -C firmware/tests test
 ```
 
-Host verification covers the custom driver, CSI preprocessing, fusion, API behavior, synthetic augmentation, representative INT8 calibration, and dashboard startup. ESP-IDF compilation and physical sensor/radio/reboot evidence require the target toolchain and hardware.
+Host verification covers the custom drivers, protocol, NVS queue, CSI preprocessing, fusion, API and dashboard. Both V1 applications were also built/flashed with ESP-IDF 6.1 and observed exchanging real events; physical MQ voltage/calibration and target-room activity accuracy remain open.
 
 ## Scope
 

@@ -9,7 +9,7 @@
 #define CSI_PACKET_PORT 3333
 
 void app_main(void) {
-    if (wifi_station_start(CONFIG_SAFESENSE_WIFI_SSID, CONFIG_SAFESENSE_WIFI_PASSWORD, 30000) != 0) {
+    if (safesense_wifi_station_start(CONFIG_SAFESENSE_WIFI_SSID, CONFIG_SAFESENSE_WIFI_PASSWORD, 30000) != 0) {
         ESP_LOGE("csi_tx", "Wi-Fi connection failed; configure credentials with menuconfig");
         return;
     }

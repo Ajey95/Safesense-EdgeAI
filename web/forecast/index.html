@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scenario Forecast · SafeSense</title>
+  <link rel="stylesheet" href="/forecast-assets/style.css?v=scenario-route-20261006">
+</head>
+<body data-room="Cold storage">
+  <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-snow" viewBox="0 0 32 32"><path d="M16 2v28M4 9l24 14M28 9 4 23M11 5l5 4 5-4M11 27l5-4 5 4M4 14l6-1-1-6M28 18l-6 1 1 6M9 25l1-6-6-1M23 7l-1 6 6 1"/></symbol>
+    <symbol id="i-brand" viewBox="0 0 48 48"><path d="M24 3 40 9v12.5c0 9.8-5.8 17.2-16 22-10.2-4.8-16-12.2-16-22V9L24 3Z"/><path d="M11.5 25h7l3-8 4.4 15 3.1-7h7.5"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7v11h-6v-7H9v7H3z"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="m3 17 6-6 4 3 7-8M16 6h4v4"/></symbol>
+    <symbol id="i-sensor" viewBox="0 0 24 24"><path d="M12 3v18M7 7a7 7 0 0 1 10 0M4 4a11 11 0 0 1 16 0M7 17a7 7 0 0 0 10 0M4 20a11 11 0 0 0 16 0"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.2 3.7 2 18a2 2 0 0 0 1.8 3h16.4a2 2 0 0 0 1.8-3L13.8 3.7a2 2 0 0 0-3.6 0Z"/><path d="M12 9v5m0 3h.01"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M6 2h8l5 5v15H6zM14 2v6h5M9 12h7M9 16h7"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="8" r="3"/><circle cx="9" cy="19" r="3"/><path d="m8.5 7.5 6.5.5M16.5 10l-6 6.5M7 16l-1-7"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M10 2h4l.7 2.7 2.3 1 2.4-1.4 2.8 2.8-1.4 2.4 1 2.3L24 12v4l-2.7.7-1 2.3 1.4 2.4-2.8 2.8-2.4-1.4-2.3 1L14 26h-4l-.7-2.7-2.3-1-2.4 1.4-2.8-2.8 1.4-2.4-1-2.3L0 16v-4l2.7-.7 1-2.3L2.3 6.6l2.8-2.8 2.4 1.4 2.3-1z" transform="translate(0 -2) scale(1 .92)"/></symbol>
+    <symbol id="i-thermo" viewBox="0 0 24 24"><path d="M9 14.5V5a3 3 0 0 1 6 0v9.5a5 5 0 1 1-6 0Z"/><path d="M12 8v9"/></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8a16 16 0 0 1 20 0M5 11a11 11 0 0 1 14 0M8 14a6 6 0 0 1 8 0M12 18h.01"/></symbol>
+    <symbol id="i-bt" viewBox="0 0 24 24"><path d="M12 2v20l7-6-14-10m0 12L19 8l-7-6"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m4 12 5 5L20 6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 13 8-13 8z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m5 9 7 7 7-7"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="5" y="1" width="14" height="22" rx="2"/><path d="M10 19h4"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 48 36"><rect x="7" y="3" width="34" height="23" rx="2"/><path d="M3 31h42l-4-5H7l-4 5Zm16 0h10"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 48 36"><path d="M10 30C5 30 2 26 2 21c0-5 4-9 9-9 1-6 6-10 12-10 6 0 11 4 12 10 6 0 11 4 11 9s-4 9-10 9Z"/><path d="M24 25V14m0 0-5 5m5-5 5 5"/></symbol>
+    <symbol id="i-flask" viewBox="0 0 32 32"><path d="M11 3h10M14 3v9L5 26a2 2 0 0 0 2 3h18a2 2 0 0 0 2-3l-9-14V3M10 21h12"/></symbol>
+    <symbol id="i-book" viewBox="0 0 32 32"><path d="M3 6c5-2 9-1 13 2v20c-4-3-8-4-13-2V6Zm26 0c-5-2-9-1-13 2v20c4-3 8-4 13-2V6Z"/></symbol>
+    <symbol id="i-wheat" viewBox="0 0 32 32"><path d="M16 29V5M16 23c-7-1-11-5-11-10 6 0 10 3 11 10Zm0-7c7-1 11-5 11-10-6 0-10 3-11 10ZM11 8l5-5 5 5"/></symbol>
+    <symbol id="i-server" viewBox="0 0 32 32"><rect x="5" y="4" width="22" height="7" rx="1"/><rect x="5" y="13" width="22" height="7" rx="1"/><rect x="5" y="22" width="22" height="7" rx="1"/><path d="M9 7h.01M9 16h.01M9 25h.01M14 7h8M14 16h8M14 25h8"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <a class="brand" href="/forecast?view=overview" data-view="overview" aria-label="SafeSense overview"><svg class="brand-mark" aria-hidden="true"><use href="#i-brand"/></svg><span><strong>SafeSense</strong><small id="brand-tagline">COLD CHAIN. A SAFER TOMORROW.</small></span></a>
+    <label class="top-search"><span class="magnify"></span><input id="scenario-search" type="search" placeholder="Search scenarios..." aria-label="Search scenarios"></label>
+    <div class="top-spacer"></div>
+    <button id="location-button" class="location-button" type="button"><svg><use href="#i-pin"/></svg><span id="top-room">Cold storage</span><svg class="chevron"><use href="#i-chevron"/></svg></button>
+    <span id="top-time" class="top-time">Synthetic episode · minute 82</span><span class="avatar">SS</span>
+  </header>
+
+  <aside class="sidebar" aria-label="Main navigation">
+    <nav>
+      <a href="/forecast?view=overview" data-view="overview"><svg><use href="#i-home"/></svg>Overview</a>
+      <a class="selected" href="/forecast?view=forecast" data-view="forecast" aria-current="page"><svg><use href="#i-trend"/></svg>Scenario Forecast</a>
+      <a href="/forecast?view=live" data-view="live"><svg><use href="#i-wifi"/></svg>Live Hardware</a>
+      <a href="/forecast?view=sensors" data-view="sensors"><svg><use href="#i-sensor"/></svg>Sensors</a>
+      <a href="/forecast?view=sites" data-view="sites"><svg><use href="#i-pin"/></svg>Sites</a>
+      <a href="/forecast?view=alerts" data-view="alerts"><svg><use href="#i-alert"/></svg>Alerts <span id="alert-count" class="nav-count">0</span></a>
+      <a href="/forecast?view=reports" data-view="reports"><svg><use href="#i-doc"/></svg>Reports</a>
+      <a href="/forecast?view=integrations" data-view="integrations"><svg><use href="#i-link"/></svg>Integrations</a>
+      <a href="/forecast?view=settings" data-view="settings"><svg><use href="#i-gear"/></svg>Settings</a>
+    </nav>
+    <div class="sidebar-foot"><img id="room-art" src="/forecast-assets/assets/mountains.png" alt="Snowy mountain illustration"><p id="sidebar-tagline">COLD DATA.<br>BRIGHTER DAYS.</p></div>
+  </aside>
+
+  <main id="top" class="content">
+    <div id="room-motto" class="motto">KEEP IT COLD. KEEP PEOPLE SAFE.</div>
+    <div id="forecast-view">
+    <div class="page-heading">
+      <div><h1>Scenario Forecast</h1><p>Simulate. Anticipate. Take Action.</p></div>
+      <div id="controls" class="heading-controls"><label class="scenario-control" for="scenario-select"><span>Select Scenario</span><span class="select-wrap"><svg><use id="room-select-icon" href="#i-snow"/></svg><select id="scenario-select" aria-label="Select scenario"></select><svg class="chevron"><use href="#i-chevron"/></svg></span></label><button id="run-button" class="run-button" type="button"><svg><use href="#i-play"/></svg><span>Run Simulation</span></button></div>
+    </div>
+
+    <section class="scenario-strip" aria-label="Simulation context"><span class="simulation-badge">SIMULATION</span><div class="strip-copy"><strong id="scenario-title">Loading scenario...</strong><span id="scenario-story">Controlled synthetic sensor episode.</span></div><div class="strip-meta"><span id="scenario-clock">Minute 82 of 151</span><span>Forecast horizon: 30 minutes</span></div></section>
+
+    <div class="summary-grid">
+      <section id="current-conditions" class="panel current-panel"><div class="panel-head"><h2>Current Conditions</h2><span>(Synthetic sensor feed)</span></div><div class="hero-reading"><div class="reading-icon"><svg><use href="#i-thermo"/></svg></div><strong id="current-temp">—</strong><span id="current-state" class="state-pill">LOADING</span></div><div class="metric-rows"><div><span>Room range</span><strong id="current-range">—</strong></div><div><span>Humidity</span><strong id="current-humidity">—</strong></div><div><span>Pressure</span><strong id="current-pressure">—</strong></div><div><span>BME680 gas</span><strong id="current-gas">—</strong></div><div><span>MQ-135</span><strong id="current-mq">—</strong></div></div></section>
+      <section class="panel future-panel"><div class="panel-head"><h2>Forecast at +30 min</h2><span>(TinyML)</span></div><div class="hero-reading"><div class="reading-icon"><svg><use href="#i-thermo"/></svg></div><strong id="future-temp">—</strong><span id="future-state" class="state-pill">LOADING</span></div><div class="metric-rows"><div><span>Temperature at +30 min</span><strong id="future-temp-row">—</strong></div><div><span title="The model checks +5, +10, +15, +20, +25, and +30 minutes.">First risky forecast point</span><strong id="breach-time">—</strong></div><div><span>Forecast trigger</span><strong id="breach-channel">—</strong></div><div><span>Humidity at +30 min</span><strong id="future-humidity">—</strong></div><div><span>Alert checks</span><strong id="response-short">—</strong></div></div></section>
+      <section id="communication-path" class="panel route-panel"><div class="panel-head"><h2>Communication Path <span>(During Alert)</span></h2><span id="route-source" class="source-label">SIMULATED ROUTE</span></div><div class="route-graphic"><div class="route-row"><div class="route-device sensor-device"><div class="device-icon"><svg><use id="tx-room-icon" href="#i-snow"/></svg></div><b>Sensor TX</b><small>ESP32 + TinyML</small></div><div class="route-connector primary"><b>Wi-Fi</b><span id="wifi-label">TX → laptop</span><div class="arrow-line"></div></div><div class="route-device laptop-device"><svg class="laptop-art"><use id="wifi-dest-icon" href="#i-laptop"/></svg><b id="wifi-dest-name">Laptop Wi-Fi</b><small id="laptop-label">No physical receipt</small></div></div><div class="fallback-row"><div class="fallback-spine"></div><div class="route-connector fallback"><svg><use href="#i-bt"/></svg><b>Bluetooth Fallback</b><span>TX → laptop</span><div class="arrow-line"></div></div><div class="route-device phone-device"><svg class="phone-art"><use href="#i-laptop"/></svg><b>Laptop BT</b><small id="bt-label">No BT receipt</small></div></div></div><div class="route-controls"><label class="switch-line"><input id="wifi-fault" type="checkbox"><span class="switch"></span><span>Simulate Wi-Fi timeout</span></label><span id="route-event" class="route-event">No alert event yet</span></div></section>
+    </div>
+
+    <div class="detail-grid"><section id="forecast-chart" class="panel chart-panel"><div class="section-head"><h2 id="chart-heading">Temperature Forecast <span>(Next 30 Minutes)</span></h2><div class="chart-legend"><span><i class="blue-line"></i> TinyML forecast</span><span><i class="red-line"></i> <span id="limit-legend">Demo upper limit</span></span><span><i class="gray-line"></i> Current value</span></div></div><div id="chart" class="chart" role="img" aria-label="Temperature forecast graph"></div><div class="chart-tools"><label for="chart-channel">Trace</label><select id="chart-channel"><option value="temperature_c">Temperature</option><option value="humidity_pct">Humidity</option><option value="pressure_pa">Pressure</option><option value="gas_resistance_ohm">BME680 gas resistance</option><option value="mq135_adc_raw">MQ-135 raw ADC</option></select><label class="reveal-control"><input id="reveal-truth" type="checkbox">Reveal simulator future</label><span id="truth-result"></span></div></section>
+    <section id="alert-response" class="panel response-panel"><div class="section-head"><h2>Alert &amp; Response</h2></div><div id="timeline" class="timeline"></div><button id="voice-button" type="button" class="voice-button" disabled>▶ Play demo voice alert</button></section></div>
+
+    <section id="status-banner" class="status-banner"><span class="status-circle"><svg><use href="#i-check"/></svg></span><div><strong id="status-title">Preparing forecast</strong><p id="status-copy">The selected episode is synthetic.</p></div><button id="details-button" type="button">View Alert Details <span>→</span></button></section>
+    <p class="provenance">Synthetic demonstration · BME680 and MQ-135 channels are modeled signals · MQ-135 is raw ADC, not gas concentration · Simulated acknowledgments are not hardware delivery proof</p>
+    </div>
+    <section id="workspace-view" class="workspace-view" hidden aria-live="polite">
+      <div class="workspace-heading"><div><h1 id="workspace-title">Overview</h1><p id="workspace-subtitle">Current synthetic episode</p></div><span id="workspace-context" class="workspace-context">SIMULATION</span></div>
+      <div id="workspace-body" class="workspace-body"></div>
+    </section>
+  </main>
+  <dialog id="details-dialog"><button id="close-details" class="dialog-close" type="button" aria-label="Close">×</button><h2>Forecast alert details</h2><div id="details-body"></div><div class="hardware-replay"><h3>Legacy two-board TX replay</h3><p>This optional replay uses the older TX → RX ESP32 Wi-Fi firmware and a laptop Bluetooth receiver. It is separate from the planned direct-to-laptop Wi-Fi route shown in the simulation.</p><label for="tx-port">TX USB port</label><input id="tx-port" value="COM11" pattern="COM[0-9]{1,3}" aria-label="TX USB port"><button id="replay-button" type="button">Replay on TX</button><p id="replay-result" role="status">Requires the older TX/RX setup and a paired laptop Bluetooth receiver.</p></div></dialog>
+  <script src="/forecast-assets/live.js?v=refresh-port-20261005" defer></script>
+  <script src="/forecast-assets/app.js?v=scenario-route-20261006" defer></script>
+</body>
+</html>

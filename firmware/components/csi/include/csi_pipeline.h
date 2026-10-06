@@ -14,5 +14,8 @@ typedef struct { float frames[CSI_WINDOW_FRAMES][CSI_DATA_SUBCARRIERS]; uint16_t
 void csi_pipeline_init(csi_pipeline_t *pipeline);
 /* ESP32 raw order is imaginary, real; invalid first words are rejected without shifting features. */
 csi_status_t csi_pipeline_push(csi_pipeline_t *pipeline, const int8_t *iq, size_t length, bool first_word_invalid, bool *window_ready);
+/* RX diagnostics only: zero-mask the invalid +1 carrier, preserving 47 measured
+ * amplitudes in a 48-wide frame. Do not feed these windows to a released model. */
+csi_status_t csi_pipeline_push_masked(csi_pipeline_t *pipeline, const int8_t *iq, size_t length, bool first_word_invalid, bool *window_ready);
 /* Copies frames chronologically so model input is always [100][48]. */
 csi_status_t csi_pipeline_copy_window(const csi_pipeline_t *pipeline, float output[CSI_WINDOW_FRAMES][CSI_DATA_SUBCARRIERS]);
