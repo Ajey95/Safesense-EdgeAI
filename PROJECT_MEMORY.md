@@ -673,7 +673,7 @@ open as described above.
 
 ## 2026-10-07 direct laptop transport GitHub update
 
-The pending workspace changes add the classic ESP32 direct-laptop SoftAP HTTP
+Commit `59cd8ef` adds the classic ESP32 direct-laptop SoftAP HTTP
 route, exact-ID laptop receiver, paired Bluetooth full sensor JSON fallback,
 Live Hardware direct Wi-Fi/Bluetooth views, labelled transport test controls,
 and the direct transport runbook. The 2026-10-06 physical check above is the
@@ -683,6 +683,7 @@ training, or real-data evaluation was integrated in this snapshot. The
 synthetic Hugging Face dataset card and README keep its provenance explicit.
 Before publication, 49 Python tests passed, both changed dashboard scripts
 passed `node --check`, and the ESP-IDF 6.1 TX build completed with a
-0x14a080-byte image and 21% of the app partition free. The direct transport
+0x14a080-byte image and 21% of the app partition free. The commit was pushed
+as a fast-forward to both `origin/v1` and the default `origin/main`. The direct transport
 runbook records the NVS queue-full limitation and the difference between
 transport receipts and hazard forecast validation.
