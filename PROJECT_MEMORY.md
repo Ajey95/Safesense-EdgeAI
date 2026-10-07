@@ -1,5 +1,55 @@
 # SafeSense Software Context
 
+## Forecast dataset card timing and preparation — 2026-10-06
+
+The published `Ajeya95/environmental-forecast-v1` card now includes the verified
+600/160 episode and 90,600/24,160 row split, relative one-minute index
+0–150, channel bounds, four-decimal CSV export, Parquet validation, and the
+distinction between published rows and trainer-only scaling. The card upload
+is Hugging Face commit `b369e25fdcba3310138816ec4db4b9ae94a329b7`;
+public readback matched `huggingface/environmental-forecast-v1/README.md`
+byte for byte. The generator's room labels are scenarios, not physical
+collection locations, and no collection dates or measured sampling interval
+exist for these rows. The user's pasted physical-recordings draft was not
+published because it described the generated train/test rows as sensor
+recordings.
+
+## Formula and architecture slides — 2026-10-06
+
+The current 20-slide final-review deck is
+`output/presentations/SafeSense_Final_Review_Presentation_2026-10-06_v6.pptx`.
+Slide 7 explains the seeded synthetic generator's five channel formulas and
+760-episode train/test split. Slide 13 embeds the corrected GPT-generated
+architecture image from `docs/architecture-assets/safesense-architecture-gpt-2026-10-06.png`:
+one sensor ESP32, Wi-Fi to a laptop, and Bluetooth Classic SPP alert fallback
+to the same laptop. Delivery/status slides now reflect the later physical
+check in `docs/direct_laptop_transport.md`: real BME680/MQ-135 Wi-Fi events
+and a labelled Bluetooth transport test had matching laptop receipts. Those
+checks do not validate real-room forecast accuracy or confirmed speech.
+The 16-record TX queue filled during the Bluetooth test, so urgent-event
+retention across long outages remains open. The deck passed package, layout,
+font, native-chart, and Artifact Tool import validation, and all 20 slides
+were rendered for visual review. Earlier sections below describe prior
+snapshots and may state older route status.
+
+## Cited forecast dataset card and review slides — 2026-10-06
+
+The dataset at `Ajeya95/environmental-forecast-v1` is the project-generated synthetic forecast export: its manifest, compressed CSV, and train/test Parquet SHA-256 values match the local release. Its user-edited README incorrectly said every reading was captured. The card was replaced at Hugging Face commit `47a8d31afae1e59ed4ee8526e9f3762f171d5e47` with explicit synthetic provenance, operational-source citations, sensor limits, and the new repository ID; public readback matched the local card by SHA-256. `README.md` and `docs/forecast_lab.md` now link to that dataset. The 18-slide final-review deck is `output/presentations/SafeSense_Final_Review_Presentation_2026-10-06_v4.pptx`; slides 16–17 explain the published scenario rationale and the remaining real-room validation gate, with direct source links in speaker notes. Presentation package, layout, font, chart, and import checks passed. No physical forecast accuracy is claimed.
+
+## Scenario dashboard audit and route labels — 2026-10-06
+
+All eight held-out synthetic scenarios load in the dashboard. At default seed
+17, `bakery_restart` and `server_airflow` can show no crossing at reviewed
+minutes; after reveal the page calls these confirmed no-breach controls when
+the simulator agrees. `bakery_cooling` at minute 110 exposes a genuine model
+false alert. The page now names false alerts and missed breaches explicitly,
+without changing the dataset, model, or evaluation data. Simulated delivery
+labels follow the single-board ESP32 → laptop Wi-Fi/Bluetooth plan; the
+optional two-board TX replay is identified separately. Physical direct-laptop
+delivery remains unverified. Chrome browser smoke covered all eight scenario
+selections and the reveal/fault controls; `tests/test_forecast_demo.py` passed
+7 tests and `node --check web/forecast/app.js` passed.
+
 ## Final review presentation — 2026-10-06
 
 Created a 16-slide PowerPoint in
@@ -563,6 +613,45 @@ The `/forecast` diagram now shows one conceptual Wi-Fi route, Sensor TX → Lapt
 
 The SafeSense-generated synthetic forecast dataset was published publicly to `Ajeya95/safesense-synthetic-environmental-forecast-v1` on Hugging Face at commit `039d156a0eb10ddfccaa0dd90ece418e9e52d344`. The release contains split Parquet files, the exact compressed CSV export, manifest, generator source, and a card explicitly stating synthetic project provenance and no selected reuse license. Both Parquet splits were fetched back anonymously into `data/hf_fetched_synthetic_v1/` and matched the local release files by SHA-256. Hub Dataset Viewer split indexing first returned busy/500, then reported `pending` with no failed configs; check later before claiming viewer readiness. The existing trainer still generates its examples locally; publication did not change model training or validate hazards.
 
+## 2026-10-06 single-board physical transport check
+
+Classic ESP32 `8c:94:df:90:1f:ec` (COM11) now runs a direct-laptop SoftAP Wi-Fi
+route and a paired Bluetooth Classic SPP alert route. The laptop receiver
+journals Wi-Fi events by exact ID before ACK and syncs them to FastAPI; the
+Bluetooth receiver journals before `ACK|ID`, syncs receipts, and attempts
+local voice playback. The live dashboard separates physical readings and
+labelled transport tests. The BME680 connected in this session uses I2C
+`0x77`, discovered by probing `0x76`/`0x77`; MQ-135 GPIO34 reports raw ADC.
+
+Physical Wi-Fi event `tx-3f4ec03b44a16c5dc5c98404` reached laptop and
+backend with non-null BME680 temperature/humidity/pressure/gas and MQ-135
+ADC. On regular `Amrita` Wi-Fi, Windows paired with `SafeSense-TX-Alert` on
+outgoing COM15; a Bluetooth-only labelled test event
+`tx-b5a58d68bafed12fe1b3b23e` was journalled, reported to the backend,
+and the ESP32 logged `state=STORED` for that exact ID. The laptop remains on
+`Amrita`, the injected Wi-Fi receiver fault is off, and the normal COM15
+listener is running. The 4 MB pre-flash backup is in ignored
+`output/hardware_backup/`. The TX NVS queue reached its 16-event cap while
+Wi-Fi was absent; the Bluetooth test succeeded, but its TX-side queue
+retention did not. Do not claim durable long-outage delivery or real hazard
+forecast accuracy from this check. The dashboard now rejects Wi-Fi test
+requests while the laptop route is off the ESP32 subnet, rather than claiming
+an unverified send. The Live Hardware refresh text now names the ESP32 Wi-Fi
+network when the direct route is stale, rather than telling users to inspect
+the USB bridge. Runbook: `docs/direct_laptop_transport.md`.
+
+Follow-up in the same hardware session: TX now sends complete environmental
+JSON over Bluetooth SPP when the current sample lacks a Wi-Fi ACK. The paired
+COM15 listener validates it, commits it to ignored `data/live/direct_bt.db`,
+ACKs the exact ID, and syncs it to FastAPI with a distinct Bluetooth marker.
+The Live Hardware view shows actual BME680 and MQ-135 values as
+`DIRECT_BLUETOOTH` while Windows remains on `Amrita`. Physical event
+`tx-93a6153a6e87907efefba3bf` reached both laptop and backend with real
+sensor values; later samples continued at roughly 10-second intervals. A
+browser check rendered `LIVE BLUETOOTH READING`. The browser's earlier stale
+age was also inflated by parsing UTC-naive SQLite timestamps as local; direct
+event timestamps are now normalized to UTC before freshness calculation.
+
 ## Initial architecture
 
 One local FastAPI service, SQLite initialized from SQLAlchemy metadata, WebSocket dashboard fan-out, and Streamlit dashboard. ESP32 environmental firmware publishes the same validated telemetry envelope over MQTT through the local bridge. Formal versioned database migrations are not implemented and are outside the present review rubric.
@@ -581,3 +670,19 @@ artifacts were included; they are not real-hazard validation. Before the push,
 staged changes passed `git diff --cached --check`. The physical phone receiver,
 replacement MQ-135 ADC/voltage, and real-hazard forecast validation remain
 open as described above.
+
+## 2026-10-07 direct laptop transport GitHub update
+
+The pending workspace changes add the classic ESP32 direct-laptop SoftAP HTTP
+route, exact-ID laptop receiver, paired Bluetooth full sensor JSON fallback,
+Live Hardware direct Wi-Fi/Bluetooth views, labelled transport test controls,
+and the direct transport runbook. The 2026-10-06 physical check above is the
+evidence for the two paths; no new physical test was run during this GitHub
+update. The earlier AIRWISE discussion remains a proposal: no AIRWISE data,
+training, or real-data evaluation was integrated in this snapshot. The
+synthetic Hugging Face dataset card and README keep its provenance explicit.
+Before publication, 49 Python tests passed, both changed dashboard scripts
+passed `node --check`, and the ESP-IDF 6.1 TX build completed with a
+0x14a080-byte image and 21% of the app partition free. The direct transport
+runbook records the NVS queue-full limitation and the difference between
+transport receipts and hazard forecast validation.

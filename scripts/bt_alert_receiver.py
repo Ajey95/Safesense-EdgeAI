@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import time
@@ -17,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+
+from scripts.direct_laptop_receiver import Receiver
 
 
 ROOMS = ("cold storage", "laboratory", "classroom", "bakery", "server room")
@@ -166,6 +169,8 @@ def main() -> None:
     parser.add_argument("--api", default="http://127.0.0.1:8000",
                         help="Local dashboard API used to sync durable laptop receipts")
     parser.add_argument("--no-voice", action="store_true")
+    parser.add_argument("--send-test", action="store_true",
+                        help="Request one labelled ESP32 transport test alert after SPP connects")
     args = parser.parse_args()
     try:
         import serial
@@ -173,23 +178,50 @@ def main() -> None:
         raise SystemExit("Install the demo extra: pip install -e '.[demo]'") from error
     seen = stored_ids(args.journal)
     reported: set[str] = set()
-    with serial.Serial(args.port, baudrate=115200, timeout=1, write_timeout=2) as connection:
-        print(f"Listening for paired SPP alerts on {args.port}; journal={args.journal}", flush=True)
-        next_sync = 0.0
-        while True:
-            if time.monotonic() >= next_sync:
-                sync_journal(args.journal, args.api, reported)
-                report_listener_heartbeat(args.api)
-                next_sync = time.monotonic() + 5
-            frame = connection.readline(160)
-            if not frame:
-                continue
-            alert = handle_frame(connection, frame, args.journal, seen, not args.no_voice)
-            if alert:
-                print(f"Laptop stored event={alert['event_id']} room={alert['room']} "
-                      f"forecast=+{alert['horizon_minutes']}m", flush=True)
-                if report_to_backend(args.api, alert):
-                    reported.add(alert["event_id"])
+    samples = Receiver(Path("data/live/direct_bt.db"), args.api,
+                       ingress="bt-sensor-receiver")
+    test_sent = False
+    while True:
+        try:
+            with serial.Serial(args.port, baudrate=115200, timeout=1, write_timeout=2) as connection:
+                print(f"Listening for paired SPP alerts on {args.port}; journal={args.journal}", flush=True)
+                if args.send_test and not test_sent:
+                    time.sleep(0.5)  # Let Windows finish the SPP connection handshake.
+                    connection.write(b"TEST\n")
+                    connection.flush()
+                    test_sent = True
+                    print("Requested one labelled ESP32 Bluetooth transport test", flush=True)
+                next_sync = 0.0
+                while True:
+                    if time.monotonic() >= next_sync:
+                        sync_journal(args.journal, args.api, reported)
+                        samples.sync_once()
+                        report_listener_heartbeat(args.api)
+                        next_sync = time.monotonic() + 5
+                    frame = connection.readline(1024)
+                    if not frame:
+                        continue
+                    if frame.startswith(b"DATA|"):
+                        try:
+                            tx = json.loads(frame[5:])
+                            event_id, duplicate = samples.accept(tx, speak_alert=False)
+                        except (ValueError, KeyError, TypeError, sqlite3.Error) as error:
+                            print(f"Rejected Bluetooth sensor frame: {error}", flush=True)
+                            continue
+                        connection.write(f"ACK|{event_id}\n".encode("ascii"))
+                        connection.flush()
+                        print(f"Bluetooth sensor stored event={event_id} duplicate={duplicate}", flush=True)
+                        samples.sync_once()
+                        continue
+                    alert = handle_frame(connection, frame, args.journal, seen, not args.no_voice)
+                    if alert:
+                        print(f"Laptop stored event={alert['event_id']} room={alert['room']} "
+                              f"forecast=+{alert['horizon_minutes']}m", flush=True)
+                        if report_to_backend(args.api, alert):
+                            reported.add(alert["event_id"])
+        except (serial.SerialException, OSError) as error:
+            print(f"Bluetooth serial disconnected: {error}; retrying in 2 seconds", flush=True)
+            time.sleep(2)
 
 
 if __name__ == "__main__":

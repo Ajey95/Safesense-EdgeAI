@@ -164,7 +164,7 @@ function renderChart(){
     const timing=delta===null?'':delta===0?' · same sampled minute':` · ${Math.abs(delta)} min ${delta>0?'late':'early'}`;
     comparison=outcome==='false-alert'?'FALSE ALERT · Simulator stayed within range':outcome==='correct-no-alert'?'CORRECT NO-ALERT · Simulator stayed within range':outcome==='missed-breach'?`MISSED BREACH · ${actual}`:`${predicted} · ${actual}${timing}`;
     $('truth-result').title=`${predicted} · ${actual}${timing}`;
-  }
+  } else $('truth-result').title='';
   text('truth-result',comparison);
 }
 
@@ -181,14 +181,16 @@ function renderTimeline(){
   }
   if(revealedOutcome(d)==='false-alert')list.append(timelineItem('i-alert','warning','Reveal','False alert in synthetic episode','Simulator stayed within the demo ranges.'));
   if(revealedOutcome(d)==='correct-no-alert')list.append(timelineItem('i-check','success','Reveal','No-breach control confirmed','Model and simulator stayed within range.'));
+  if(revealedOutcome(d)==='missed-breach')list.append(timelineItem('i-alert','warning','Reveal','Missed breach in synthetic episode','Simulator crossed a demo range without a model alert.'));
   $('voice-button').disabled=!alert;
 }
 function renderStatus(){
   const d=state.data,alert=Boolean(d.breach),fault=state.fault,b=$('status-banner');
   if(state.hardware){const h=state.hardware;b.className=`status-banner ${h.rx_ack||h.bt_ack?'':'warning'}`;text('status-title',h.bt_ack?'Bluetooth receiver stored event':h.rx_ack?'RX ESP32 stored event':'Hardware delivery unconfirmed');text('status-copy',`${h.event_id} · Legacy two-board replay · TX persisted: ${h.tx_persisted?'yes':'no'} · RX ACK: ${h.rx_ack?'yes':'no'} · Bluetooth receipt: ${h.bt_ack?'yes':'no'} · Backend storage unverified.`);return;}
   const outcome=revealedOutcome(d);
-  b.className=`status-banner ${!alert?'info':fault||outcome==='false-alert'?'warning':''}`;
+  b.className=`status-banner ${outcome==='missed-breach'||fault||outcome==='false-alert'?'warning':!alert?'info':''}`;
   if(outcome==='false-alert'){text('status-title','False alert in this synthetic episode');text('status-copy',`Model predicted a range crossing, but the revealed simulator future stayed within range. ${d.event_id} used a simulated route.`);}
+  else if(outcome==='missed-breach'){text('status-title','Missed breach in this synthetic episode');text('status-copy','The model predicted no crossing, but the revealed simulator future crossed a configured range.');}
   else if(outcome==='correct-no-alert'){text('status-title','No-breach control confirmed');text('status-copy','The model predicted no crossing and the revealed simulator future stayed within the demo ranges.');}
   else if(!alert){text('status-title','Monitoring in progress');text('status-copy','No 30-minute breach predicted. Reveal the simulator future to check this no-alert decision.');}
   else if(fault){text('status-title','Bluetooth fallback simulated');text('status-copy',`Wi-Fi to laptop timeout injected for ${d.event_id}. Bluetooth laptop receipt is simulated.`);}
@@ -198,7 +200,7 @@ function renderDetails(){
   const d=state.data,host=$('details-body');host.replaceChildren();
   const route=state.hardware?'legacy two-board TX replay':!d.breach?'no alert packet generated':state.fault?'Bluetooth to laptop simulated after Wi-Fi timeout':'Wi-Fi to laptop receipt simulated';
   const lines=[`Scenario: ${d.scenario.room} · ${d.scenario.title}`,`Dataset: synthetic, held-out scenario family · episode seed ${d.seed}`,`Model input: 60 observed minutes, five channels, room type. Hidden future is excluded.`,`Forecast: ${d.breach?`${labels[d.breach.channel]} ${d.breach.direction} ${round(d.breach.limit,d.breach.channel)} ${units[d.breach.channel]} at first sampled point +${d.breach.at_minute} minutes`:'no configured range crossing at six five-minute forecast points'}.`,`Response: ${d.scenario.response}`,`Route: ${route}.`,`Event ID: ${d.event_id}`,`Limits are demonstration policy only. MQ-135 is raw ADC, not calibrated ppm. No real emergency service is contacted.`];
-  if(d.truth_revealed){const alreadyOutside=currentBreach(d);lines.push(`Hidden simulator future: ${alreadyOutside?`already outside range now, ${labels[alreadyOutside]}`:d.actual_breach?`first outside at +${d.actual_breach.at_minute} min, ${labels[d.actual_breach.channel]}`:'no breach within 30 minutes'}.`);const outcome=revealedOutcome(d);if(outcome==='false-alert')lines.push('Evaluation: false alert. The simulator stayed within range.');if(outcome==='correct-no-alert')lines.push('Evaluation: correct no-alert control for this episode.');}
+  if(d.truth_revealed){const alreadyOutside=currentBreach(d);lines.push(`Hidden simulator future: ${alreadyOutside?`already outside range now, ${labels[alreadyOutside]}`:d.actual_breach?`first outside at +${d.actual_breach.at_minute} min, ${labels[d.actual_breach.channel]}`:'no breach within 30 minutes'}.`);const outcome=revealedOutcome(d);if(outcome==='false-alert')lines.push('Evaluation: false alert. The simulator stayed within range.');if(outcome==='correct-no-alert')lines.push('Evaluation: correct no-alert control for this episode.');if(outcome==='missed-breach')lines.push('Evaluation: missed breach. The simulator crossed a demo range without a model alert.');}
   if(state.hardware)lines.push(`Legacy TX hardware: NVS persisted ${state.hardware.tx_persisted}, RX ESP32 ACK ${state.hardware.rx_ack}, laptop Bluetooth receipt ${state.hardware.bt_ack}.`);
   lines.forEach(line=>{const p=document.createElement('p');p.textContent=line;host.append(p)});
 }

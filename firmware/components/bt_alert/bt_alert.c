@@ -13,6 +13,7 @@
 
 #define RECEIPT_BIT BIT0
 #define READY_BIT BIT1
+#define TEST_BIT BIT2
 static const char *TAG = "safesense_bt_alert";
 static EventGroupHandle_t events;
 static uint32_t spp_handle;
@@ -71,6 +72,8 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
                 if (strncmp(incoming, "ACK|", 4) == 0 &&
                     strcmp(incoming + 4, expected_id) == 0 && expected_id[0])
                     xEventGroupSetBits(events, RECEIPT_BIT);
+                else if (strcmp(incoming, "TEST") == 0)
+                    xEventGroupSetBits(events, TEST_BIT);
                 incoming_used = 0;
             } else if (ch >= 32 && ch <= 126 && incoming_used + 1 < sizeof(incoming)) {
                 incoming[incoming_used++] = ch;
@@ -107,6 +110,33 @@ bool bt_alert_start(void) {
 
 bool bt_alert_connected(void) {
     return events && (xEventGroupGetBits(events) & READY_BIT) && spp_handle != 0;
+}
+
+bool bt_alert_take_test_request(void) {
+    return events && (xEventGroupWaitBits(events, TEST_BIT, pdTRUE, pdFALSE, 0)
+                      & TEST_BIT) != 0;
+}
+
+bool bt_alert_send_sample(const char *event_id, const char *payload, uint32_t receipt_wait_ms) {
+    if (!bt_alert_connected() || !writable || !event_id || !payload ||
+        strlen(event_id) >= sizeof(expected_id) || strlen(payload) > 768) return false;
+    char message[784];
+    const int size = snprintf(message, sizeof(message), "DATA|%s\n", payload);
+    if (size <= 0 || size >= sizeof(message)) return false;
+    snprintf(expected_id, sizeof(expected_id), "%s", event_id);
+    xEventGroupClearBits(events, RECEIPT_BIT);
+    writable = false;
+    if (esp_spp_write(spp_handle, size, (uint8_t *)message) != ESP_OK) {
+        expected_id[0] = '\0';
+        writable = true;
+        return false;
+    }
+    const bool received = (xEventGroupWaitBits(events, RECEIPT_BIT, pdTRUE, pdFALSE,
+                                               pdMS_TO_TICKS(receipt_wait_ms)) & RECEIPT_BIT) != 0;
+    expected_id[0] = '\0';
+    ESP_LOGI(TAG, "Bluetooth sensor receipt event=%s state=%s", event_id,
+             received ? "STORED" : "UNCONFIRMED");
+    return received;
 }
 
 bool bt_alert_send(const char *event_id, uint8_t room, uint8_t horizon_minutes,

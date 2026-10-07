@@ -1,5 +1,25 @@
 menu "SafeSense TX node"
 
+config SAFESENSE_TX_DIRECT_LAPTOP_AP
+    bool "Use this ESP32 as a Wi-Fi access point for direct laptop delivery"
+    default y
+
+config SAFESENSE_TX_LAPTOP_AP_SSID
+    string "Direct laptop Wi-Fi network name"
+    default "SafeSense-TX-Laptop"
+    depends on SAFESENSE_TX_DIRECT_LAPTOP_AP
+
+config SAFESENSE_TX_LAPTOP_AP_PASSWORD
+    string "Direct laptop Wi-Fi network password (demo only)"
+    default "SafeSenseDemo24"
+    depends on SAFESENSE_TX_DIRECT_LAPTOP_AP
+
+config SAFESENSE_TX_LAPTOP_HTTP_PORT
+    int "Laptop HTTP receiver port"
+    range 1024 65535
+    default 8765
+    depends on SAFESENSE_TX_DIRECT_LAPTOP_AP
+
 config SAFESENSE_TX_WIFI_SSID
     string "Wi-Fi SSID"
     default ""

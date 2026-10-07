@@ -112,3 +112,36 @@ def test_synthetic_bluetooth_receipt_is_not_physical_evidence(client):
         "event_id": event_id, "kind": "BLUETOOTH_STORED", "simulated": True,
     }, headers={"X-SafeSense-Ingress": "bt-alert-receiver"}).status_code == 202
     assert all(item["event_id"] != event_id for item in client.get("/api/v1/live").json()["bluetooth_only"])
+
+
+def test_direct_laptop_route_requires_receiver_ingress_and_labels_test_alert(client):
+    physical_id = f"tx-{uuid4().hex}"
+    test_id = f"tx-{uuid4().hex}"
+    physical = _telemetry(physical_id)
+    physical["communication"] = None
+    physical["firmware_version"] = "direct-wifi-bme680-mq135"
+    physical["csi"]["rx_node"] = "UNKNOWN"
+    test_alert = _telemetry(test_id, simulated=True)
+    test_alert["communication"] = None
+    for item in (physical, test_alert):
+        assert client.post("/api/v1/telemetry", json=item,
+                           headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).status_code == 202
+    rows = client.get("/api/v1/live/direct").json()["events"]
+    assert next(row for row in rows if row["event_id"] == physical_id)["test_alert"] is False
+    assert next(row for row in rows if row["event_id"] == test_id)["test_alert"] is True
+    assert all(row["event_id"] != physical_id for row in client.get("/api/v1/live").json()["events"])
+
+
+def test_bluetooth_sensor_ingress_is_a_physical_reading_with_its_own_route(client):
+    event_id = f"tx-{uuid4().hex}"
+    sample = _telemetry(event_id)
+    sample["communication"] = None
+    sample["firmware_version"] = "direct-wifi-bme680-mq135"
+    sample["csi"]["rx_node"] = "UNKNOWN"
+    assert client.post("/api/v1/telemetry", json=sample,
+                       headers={"X-SafeSense-Ingress": "bt-sensor-receiver"}).status_code == 202
+    rows = client.get("/api/v1/live/direct").json()["events"]
+    reading = next(row for row in rows if row["event_id"] == event_id)
+    assert reading["route"] == "DIRECT_BLUETOOTH"
+    assert reading["environment"]["temperature_c"] == 28.6
+    assert reading["environment"]["gas_adc_raw"] == 427

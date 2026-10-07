@@ -65,6 +65,137 @@
       </section>
       <p class="live-provenance">These values are reported by the connected sensor board through the laptop USB bridge and stored by the local backend. This route makes no Wi-Fi RX, Bluetooth, or emergency delivery claim. A stale value is never labeled live.</p>`;
     target.querySelector('#live-refresh').addEventListener('click', () => refresh(true));
+    appendDirectTestPanel(target);
+  }
+
+  function appendDirectTestPanel(target) {
+    const receiver = snapshot.direct_status;
+    if (!receiver) return;
+    const panel = document.createElement('section');
+    panel.className = 'workspace-card integration-control';
+    panel.innerHTML = `<h2>Single-board wireless test</h2><p>The laptop receiver is running. Join the ESP32 Wi-Fi network, then test a real packet and receipt.</p>
+      <label class="workspace-check"><input id="direct-fault" type="checkbox" ${receiver.wifi_fault?'checked':''}> Inject Wi-Fi receiver fault</label>
+      <button type="button" class="workspace-button" id="direct-test">Send transport test alert</button>
+      <span id="direct-test-result" role="status">${receiver.laptop_stored} Wi-Fi events stored · ${receiver.backend_pending} awaiting backend</span>`;
+    target.querySelector('.live-head')?.insertAdjacentElement('afterend', panel);
+    panel.querySelector('#direct-fault').addEventListener('change', async event => {
+      try {
+        const response = await fetch('/api/v1/live/direct/fault', {method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({enabled:event.target.checked})});
+        if (!response.ok) throw new Error(`Fault control returned HTTP ${response.status}`);
+        await refresh(true);
+      } catch (problem) { panel.querySelector('#direct-test-result').textContent = String(problem.message || problem); }
+    });
+    panel.querySelector('#direct-test').addEventListener('click', async () => {
+      const result = panel.querySelector('#direct-test-result');
+      result.textContent = 'Requesting an ESP32 transport test alert…';
+      try {
+        const response = await fetch('/api/v1/live/direct/test-alert', {method:'POST',headers:{'X-SafeSense-Control':'dashboard'}});
+        if (!response.ok) {
+          const problemBody = await response.json().catch(() => ({}));
+          throw new Error(problemBody.detail || `Test request returned HTTP ${response.status}`);
+        }
+        result.textContent = 'Request sent. Await a real Wi-Fi or Bluetooth receipt.';
+      } catch (problem) { result.textContent = String(problem.message || problem); }
+    });
+  }
+
+  function renderWifi(target) {
+    const current = snapshot.latest;
+    const env = current.environment || {};
+    const fresh = snapshot.latest_fresh;
+    const receiver = snapshot.direct_status;
+    const rows = snapshot.direct_wifi_events.slice(0, 10).map(event => `<tr>
+      <th scope="row"><code>${html(event.event_id)}</code><span class="live-small">${event.test_alert?'Transport test':'Physical sensor sample'}</span></th>
+      <td>${html(stamp(event.backend_stored_at))}</td>
+      <td>${html(reading(event.environment.temperature_c,1,' °C'))}</td>
+      <td>${status('Laptop stored','good')}</td><td>${status('SQLite stored','good')}</td>
+      <td>${event.bluetooth_stored?status('Laptop stored','good'):status('No receipt')}</td></tr>`).join('');
+    const btOnly = (snapshot.direct_bt_only || []).map(receipt => `<div class="live-bt-row"><code>${html(receipt.event_id)}</code><span>${receipt.details.simulated?'Transport test':'Forecast alert'} · Bluetooth laptop receipt</span><strong>${html(stamp(receipt.reported_at))}</strong></div>`).join('');
+    document.getElementById('workspace-context').textContent = 'DIRECT WI-FI';
+    document.getElementById('workspace-subtitle').textContent = 'Physical laptop receipts for the single-board route';
+    document.getElementById('room-motto').textContent = 'REAL SENSOR DATA. WIRELESS DELIVERY.';
+    document.getElementById('brand-tagline').textContent = 'DIRECT SENSOR TELEMETRY.';
+    target.innerHTML = `
+      <section class="live-head"><div><h2>Live BME680 + MQ-135 readings</h2><p>Sensor ESP32 → Wi-Fi → nearby laptop → local backend. Fresh Wi-Fi readings require the laptop on SafeSense-TX-Laptop; Bluetooth alerts can arrive while it is on another network.</p></div><div class="live-head-side">${status(fresh?'LIVE WI-FI READING':'STALE WI-FI READING',fresh?'good':'bad')}<small>${Math.round(snapshot.latest_age_seconds)}s since backend storage</small>${refreshControls()}</div></section>
+      <section class="live-sensors" aria-label="Latest wireless physical readings">
+        ${sensorCard('BME680 · Temperature',reading(env.temperature_c,1,' °C'),fresh?'Latest Wi-Fi sample':'Last Wi-Fi sample · stale')}
+        ${sensorCard('BME680 · Humidity',reading(env.humidity_pct,1,' %'),fresh?'Latest Wi-Fi sample':'Last Wi-Fi sample · stale')}
+        ${sensorCard('BME680 · Pressure',reading(env.pressure_pa,0,' Pa'),fresh?'Latest Wi-Fi sample':'Last Wi-Fi sample · stale')}
+        ${sensorCard('BME680 · Gas resistance',env.gas_valid?reading(env.gas_resistance_ohm,0,' Ω'):'Unavailable','Broad gas response · not a chemical identifier')}
+        ${sensorCard('MQ-135 · Analog output',reading(env.gas_adc_raw,0,' raw'),'Uncalibrated ADC · not ppm')}
+      </section>
+      <section class="workspace-card live-route-card"><div class="live-section-title"><h2>Latest direct transmission</h2><span>${html(stamp(current.backend_stored_at))}</span></div><div class="live-path">
+        <div><small>01 · Sensor ESP32</small><strong>${current.test_alert?'Transport test':'Sensor sample'}</strong><span>Event ${html(current.event_id)}</span></div>
+        <div><small>02 · Wi-Fi</small><strong>Laptop receiver</strong><span>Exact event ID acknowledged after local journal commit</span></div>
+        <div><small>03 · Backend</small><strong>SQLite stored</strong><span>${html(stamp(current.backend_stored_at))} local time</span></div>
+        <div><small>04 · Bluetooth</small><strong>${current.bluetooth_stored?'Laptop receipt':'No receipt'}</strong><span>Fallback only when an alert lacks Wi-Fi ACK</span></div>
+      </div></section>
+      <section class="workspace-card integration-control"><h2>Real transport test</h2><p>Reject Wi-Fi alert delivery at the laptop receiver, then send a labelled test alert from the ESP32. Bluetooth needs a paired laptop receiver.</p>
+        <label class="workspace-check"><input id="direct-fault" type="checkbox" ${receiver?.wifi_fault?'checked':''} ${receiver?'':'disabled'}> Inject Wi-Fi receiver fault</label>
+        <button type="button" class="workspace-button" id="direct-test" ${receiver?'':'disabled'}>Send transport test alert</button>
+        <span id="direct-test-result" role="status">${receiver?`${receiver.laptop_stored} Wi-Fi events stored · ${receiver.backend_pending} awaiting backend`:'Laptop receiver unavailable'}</span>
+      </section>
+      <section class="workspace-card workspace-table-wrap live-history"><div class="live-section-title"><h2>Recent direct Wi-Fi deliveries</h2><span>${snapshot.direct_wifi_events.length} backend-stored event${snapshot.direct_wifi_events.length===1?'':'s'}</span></div>
+        <table class="workspace-table"><thead><tr><th>Event ID</th><th>Backend time</th><th>Temperature</th><th>Wi-Fi laptop</th><th>Backend</th><th>Bluetooth</th></tr></thead><tbody>${rows}</tbody></table></section>
+      <section class="workspace-card live-bt-card"><div class="live-section-title"><h2>Transport test events</h2><span>Labelled tests</span></div>${snapshot.direct_wifi_tests.length?snapshot.direct_wifi_tests.slice(0,5).map(event=>`<div class="live-bt-row"><code>${html(event.event_id)}</code><span>Wi-Fi laptop receipt · backend stored</span><strong>${html(stamp(event.backend_stored_at))}</strong></div>`).join(''):'<p>No transport test has reached the backend.</p>'}</section>
+      <section class="workspace-card live-bt-card"><div class="live-section-title"><h2>Bluetooth alerts without Wi-Fi receipt</h2><span>Nearby laptop receipts</span></div>${btOnly||'<p>No Bluetooth-only alert receipt has been reported.</p>'}</section>
+      <p class="live-provenance">Wi-Fi ACK means the laptop stored the exact event ID; backend storage is shown separately. Bluetooth storage requires a paired receiver and its own ACK. Transport tests are labelled and do not validate the forecast model.</p>`;
+    target.querySelector('#live-refresh').addEventListener('click', () => refresh(true));
+    target.querySelector('#direct-fault').addEventListener('change', async event => {
+      try {
+        const response = await fetch('/api/v1/live/direct/fault', {method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({enabled:event.target.checked})});
+        if (!response.ok) throw new Error(`Fault control returned HTTP ${response.status}`);
+        await refresh(true);
+      } catch (problem) { document.getElementById('direct-test-result').textContent = String(problem.message || problem); }
+    });
+    target.querySelector('#direct-test').addEventListener('click', async () => {
+      const result = document.getElementById('direct-test-result');
+      result.textContent = 'Requesting an ESP32 transport test alert…';
+      try {
+        const response = await fetch('/api/v1/live/direct/test-alert', {method:'POST',headers:{'X-SafeSense-Control':'dashboard'}});
+        if (!response.ok) {
+          const problemBody = await response.json().catch(() => ({}));
+          throw new Error(problemBody.detail || `Test request returned HTTP ${response.status}`);
+        }
+        result.textContent = 'Test requested. Watch the Wi-Fi and Bluetooth receipts below.';
+      } catch (problem) { result.textContent = String(problem.message || problem); }
+    });
+  }
+
+  function renderBluetooth(target) {
+    const current = snapshot.latest;
+    const env = current.environment || {};
+    const fresh = snapshot.latest_fresh;
+    const rows = snapshot.direct_bt_events.slice(0, 10).map(event => `<tr>
+      <th scope="row"><code>${html(event.event_id)}</code></th>
+      <td>${html(stamp(event.backend_stored_at))}</td>
+      <td>${html(reading(event.environment.temperature_c,1,' °C'))}</td>
+      <td>${html(reading(event.environment.humidity_pct,1,' %'))}</td>
+      <td>${html(reading(event.environment.gas_adc_raw,0,' raw'))}</td>
+      <td>${status('Bluetooth laptop stored','good')}</td></tr>`).join('');
+    const alerts = (snapshot.direct_bt_only || []).map(receipt => `<div class="live-bt-row"><code>${html(receipt.event_id)}</code><span>${receipt.details.simulated?'Transport test':'Forecast alert'} · Bluetooth alert receipt</span><strong>${html(stamp(receipt.reported_at))}</strong></div>`).join('');
+    document.getElementById('workspace-context').textContent = 'DIRECT BLUETOOTH';
+    document.getElementById('workspace-subtitle').textContent = 'Physical sensor readings received through the paired laptop';
+    document.getElementById('room-motto').textContent = 'REAL SENSOR DATA. BLUETOOTH DELIVERY.';
+    document.getElementById('brand-tagline').textContent = 'DIRECT SENSOR TELEMETRY.';
+    target.innerHTML = `
+      <section class="live-head"><div><h2>Live BME680 + MQ-135 readings</h2><p>Sensor ESP32 → Bluetooth SPP → laptop journal → local backend. The laptop can remain on Amrita.</p></div><div class="live-head-side">${status(fresh?'LIVE BLUETOOTH READING':'STALE BLUETOOTH READING',fresh?'good':'bad')}<small>${Math.round(snapshot.latest_age_seconds)}s since backend storage</small>${refreshControls()}</div></section>
+      <section class="live-sensors" aria-label="Latest Bluetooth physical readings">
+        ${sensorCard('BME680 · Temperature',reading(env.temperature_c,1,' °C'),fresh?'Latest Bluetooth sample':'Last Bluetooth sample · stale')}
+        ${sensorCard('BME680 · Humidity',reading(env.humidity_pct,1,' %'),fresh?'Latest Bluetooth sample':'Last Bluetooth sample · stale')}
+        ${sensorCard('BME680 · Pressure',reading(env.pressure_pa,0,' Pa'),fresh?'Latest Bluetooth sample':'Last Bluetooth sample · stale')}
+        ${sensorCard('BME680 · Gas resistance',env.gas_valid?reading(env.gas_resistance_ohm,0,' Ω'):'Unavailable','Broad gas response · not a chemical identifier')}
+        ${sensorCard('MQ-135 · Analog output',reading(env.gas_adc_raw,0,' raw'),'Uncalibrated ADC · not ppm')}
+      </section>
+      <section class="workspace-card live-route-card"><div class="live-section-title"><h2>Latest Bluetooth sensor delivery</h2><span>${html(stamp(current.backend_stored_at))}</span></div><div class="live-path">
+        <div><small>01 · Sensor ESP32</small><strong>Event ${html(current.event_id)}</strong><span>Physical BME680 and MQ-135 sample</span></div>
+        <div><small>02 · Bluetooth</small><strong>Laptop journal stored</strong><span>Exact event ID acknowledged over SPP</span></div>
+        <div><small>03 · Backend</small><strong>SQLite stored</strong><span>${html(stamp(current.backend_stored_at))} local time</span></div>
+      </div></section>
+      <section class="workspace-card workspace-table-wrap live-history"><div class="live-section-title"><h2>Recent Bluetooth sensor deliveries</h2><span>${snapshot.direct_bt_events.length} backend-stored events</span></div><table class="workspace-table"><thead><tr><th>Event ID</th><th>Backend time</th><th>Temperature</th><th>Humidity</th><th>MQ-135</th><th>Transport</th></tr></thead><tbody>${rows}</tbody></table></section>
+      <section class="workspace-card live-bt-card"><div class="live-section-title"><h2>Bluetooth alert receipts</h2><span>Separate from sensor samples</span></div>${alerts||'<p>No Bluetooth alert receipt has been reported.</p>'}</section>
+      <p class="live-provenance">Bluetooth sensor storage is confirmed by the laptop journal before an exact-ID ACK. Backend storage is shown separately. These readings do not validate the synthetic forecast model.</p>`;
+    target.querySelector('#live-refresh').addEventListener('click', () => refresh(true));
   }
 
   function render() {
@@ -83,6 +214,14 @@
     }
     if (snapshot.latest?.route === 'USB_SERIAL') {
       renderDirect(target);
+      return;
+    }
+    if (snapshot.latest?.route === 'DIRECT_WIFI') {
+      renderWifi(target);
+      return;
+    }
+    if (snapshot.latest?.route === 'DIRECT_BLUETOOTH') {
+      renderBluetooth(target);
       return;
     }
     const current = snapshot.latest;
@@ -127,6 +266,7 @@
       <section class="workspace-card live-bt-card"><div class="live-section-title"><h2>Bluetooth alerts without matching Wi-Fi telemetry</h2><span>Nearby laptop receipts</span></div>${btOnly||'<p>No Bluetooth-only alert receipt has been reported.</p>'}</section>
       <p class="live-provenance">RX storage and queue state are reported by the RX bridge. Bluetooth storage is reported by the paired laptop receiver after journaling. This page cannot prove that TX heard the Wi-Fi ACK, that speech played, or that anyone outside this laptop received an alert. A stale value is never labeled live.</p>`;
     target.querySelector('#live-refresh').addEventListener('click', () => refresh(true));
+    appendDirectTestPanel(target);
   }
 
   async function refresh(manual=false) {
@@ -141,26 +281,45 @@
       if (timer) render();
     }
     try {
-      const [response, overviewResponse] = await Promise.all([
+      const [response, overviewResponse, directResponse, statusResponse] = await Promise.all([
         fetch('/api/v1/live', {cache:'no-store'}),
         fetch('/api/v1/overview', {cache:'no-store'}),
+        fetch('/api/v1/live/direct', {cache:'no-store'}),
+        fetch('/api/v1/live/direct/status', {cache:'no-store'}),
       ]);
-      if (!response.ok || !overviewResponse.ok) throw new Error(`Backend returned HTTP ${response.status}/${overviewResponse.status}`);
+      if (!response.ok || !overviewResponse.ok || !directResponse.ok) throw new Error(`Backend returned HTTP ${response.status}/${overviewResponse.status}/${directResponse.status}`);
       const physical = await response.json();
       const overview = await overviewResponse.json();
+      const directWifi = await directResponse.json();
+      const directStatus = statusResponse.ok ? await statusResponse.json() : null;
       const direct = (overview.telemetry || [])
         .filter(row => row.device_id === 'safesense-tx-usb-8c94df901fec' && row.payload?.firmware_version === 'direct-serial-bme680-mq135')
         .map(row => ({event_id:row.event_id, device_id:row.device_id, backend_stored_at:utcStamp(row.received_at),
                       environment:row.payload.environment, route:'USB_SERIAL'}));
-      const combined = [...direct, ...physical.events].sort((a,b) => Date.parse(b.backend_stored_at)-Date.parse(a.backend_stored_at));
+      const directEvents = directWifi.events.map(event => ({...event,
+        backend_stored_at: utcStamp(event.backend_stored_at)}));
+      const directPhysical = directEvents.filter(event => !event.test_alert);
+      const directBluetooth = directPhysical.filter(event => event.route === 'DIRECT_BLUETOOTH');
+      const directWifiPhysical = directPhysical.filter(event => event.route === 'DIRECT_WIFI');
+      const directTests = directEvents.filter(event => event.test_alert);
+      const combined = [...direct, ...physical.events, ...directPhysical].sort((a,b) => Date.parse(b.backend_stored_at)-Date.parse(a.backend_stored_at));
       const latest = combined[0] || null;
       const latestAge = latest ? Math.max(0,(Date.parse(physical.as_of)-Date.parse(latest.backend_stored_at))/1000) : null;
-      snapshot = {...physical, direct_events:direct, events:physical.events, latest, latest_age_seconds:latestAge,
+      snapshot = {...physical, direct_events:direct, direct_wifi_events:directWifiPhysical,
+                  direct_bt_events:directBluetooth,
+                  direct_wifi_tests:directTests,
+                  direct_bt_only:directWifi.bluetooth_only.map(receipt => ({...receipt,
+                    reported_at: utcStamp(receipt.reported_at)})), direct_status:directStatus,
+                  events:physical.events, latest, latest_age_seconds:latestAge,
                   latest_fresh:latestAge !== null && latestAge <= physical.fresh_after_seconds};
       error = null;
       if (manual) {
         const checked = stamp(physical.as_of);
         refreshFeedback = !latest ? `Checked ${checked}: no physical sample has reached the backend.`
+          : !snapshot.latest_fresh && latest.route === 'DIRECT_WIFI'
+            ? `Checked ${checked}: no new Wi-Fi sensor packet. Connect the laptop to SafeSense-TX-Laptop for fresh readings; Bluetooth alerts remain available.`
+          : !snapshot.latest_fresh && latest.route === 'DIRECT_BLUETOOTH'
+            ? `Checked ${checked}: no new Bluetooth sensor packet. Check that SafeSense-TX-Alert is paired and the COM listener is running.`
           : !snapshot.latest_fresh ? `Checked ${checked}: no new sensor data. Check the sensor COM port and USB bridge.`
           : latest.event_id !== previousId ? `New sensor sample received at ${stamp(latest.backend_stored_at)}.`
           : `Checked ${checked}: waiting for the next sensor sample.`;

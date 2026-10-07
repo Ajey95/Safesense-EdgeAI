@@ -53,14 +53,19 @@ def health() -> dict:
 async def ingest(telemetry: TelemetryIn, session: Session = Depends(get_session),
                  ingress: str | None = Header(default=None, alias="X-SafeSense-Ingress")) -> dict:
     bridge_ingress = ingress == "rx-http-bridge" and telemetry.communication is not None
+    direct_ingress = ingress == "direct-laptop-receiver" and telemetry.communication is None
+    bt_sensor_ingress = ingress == "bt-sensor-receiver" and telemetry.communication is None
 
     def mark_bridge_event() -> None:
-        if bridge_ingress and session.scalar(select(DeliveryReceipt).where(
+        marker = ("RX_BRIDGE_INGEST" if bridge_ingress else
+                  "LAPTOP_WIFI_STORED" if direct_ingress else
+                  "LAPTOP_BT_SENSOR_STORED" if bt_sensor_ingress else None)
+        if marker and session.scalar(select(DeliveryReceipt).where(
                 DeliveryReceipt.event_id == telemetry.event_id,
-                DeliveryReceipt.kind == "RX_BRIDGE_INGEST")) is None:
-            session.add(DeliveryReceipt(event_id=telemetry.event_id, kind="RX_BRIDGE_INGEST",
+                DeliveryReceipt.kind == marker)) is None:
+            session.add(DeliveryReceipt(event_id=telemetry.event_id, kind=marker,
                                         reported_at=datetime.now(timezone.utc),
-                                        details={"source": "rx_http_bridge"}))
+                                        details={"source": ingress}))
 
     existing = session.scalar(select(TelemetryEvent).where(TelemetryEvent.event_id == telemetry.event_id))
     if existing:

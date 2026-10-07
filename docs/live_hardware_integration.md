@@ -1,6 +1,10 @@
 # Live hardware readings and delivery trace
 
-Open `/forecast?view=live` after starting the local backend and the bridge for the selected hardware route. The view reads backend-stored physical telemetry from the direct USB bridge or, when used, the optional RX bridge. It does not show the synthetic forecasting episode. It refreshes every three seconds and labels the latest reading stale after 45 seconds without a newly stored event.
+Open `/forecast?view=live` after starting the local backend and receiver for the selected hardware route. The view reads backend-stored physical telemetry from direct laptop Wi-Fi, paired laptop Bluetooth, direct USB, or the optional RX bridge. It does not show the synthetic forecasting episode. It refreshes every three seconds and labels the latest reading stale after 45 seconds without a newly stored event.
+
+## Current single-board wireless route (2026-10-06)
+
+The [direct laptop transport runbook](direct_laptop_transport.md) covers the ESP32 access point, laptop HTTP receiver, Bluetooth SPP receiver, exact-ID acknowledgements, and the labelled fault test. Physical BME680 and MQ-135 samples reached the laptop and backend over both Wi-Fi and Bluetooth. The Live Hardware screen labels these **DIRECT WIFI** or **DIRECT BLUETOOTH** and keeps transport receipts separate from backend storage. Those checks establish packet delivery for the recorded setup; they do not validate the synthetic-trained forecast as a real hazard detector.
 
 ## Current single-board USB route (2026-10-05)
 
@@ -28,7 +32,7 @@ The live view displays RX NVS storage, backend SQLite storage, RX queue clearanc
 
 ## Start the stack
 
-Build and flash `firmware/node1_sensor_tx` with `CONFIG_SAFESENSE_TX_SCENARIO_SERIAL_DEMO` **off**. Build and flash `firmware/node2_csi_gateway` on the other classic ESP32. The existing TX configuration targets RX's `192.168.4.1` access point. Confirm actual COM ports before flashing; previous COM11/COM12 identities are historical.
+Build and flash `firmware/node1_sensor_tx` with `CONFIG_SAFESENSE_TX_SCENARIO_SERIAL_DEMO` **off** and `CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP` **off**, then configure the TX station for RX's `192.168.4.1` access point. Build and flash `firmware/node2_csi_gateway` on the other classic ESP32. Confirm actual COM ports before flashing; previous COM11/COM12 identities are historical.
 
 Install the demo extra for the Bluetooth serial port, then run the services in separate terminals from the repository root:
 
@@ -46,4 +50,4 @@ Open [Live Hardware](http://127.0.0.1:8000/forecast?view=live). The screen shoul
 
 ## Current evidence boundary
 
-The direct COM12 route above now has physical readings and local backend storage. The separate TX→RX Wi-Fi and Bluetooth delivery claims still require their own receipts; they are not inferred from a USB sample. MQ-135 raw ADC is not a calibrated gas concentration. The synthetic-trained forecast still needs 61 valid one-minute samples before a real-sensor model alert and is not validated for real hazard prediction.
+The direct laptop Wi-Fi and Bluetooth routes have physical sample receipts in the recorded setup. Direct USB and optional TX→RX are separate routes with their own evidence; neither can be inferred from the other. MQ-135 raw ADC is not a calibrated gas concentration. The synthetic-trained forecast still needs 61 valid one-minute samples before a real-sensor model alert and is not validated for real hazard prediction. The TX NVS queue filled during a prolonged Wi-Fi absence in the recorded session, so long-outage durability is not established.

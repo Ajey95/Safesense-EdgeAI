@@ -8,3 +8,7 @@ int safesense_wifi_station_start(const char *ssid, const char *password, uint32_
 
 /* The station can acquire its first IP after start's wait timed out. */
 int safesense_wifi_station_connected(void);
+
+/* Standalone 2.4 GHz link for a nearby laptop, without a second ESP32. */
+int safesense_wifi_ap_start(const char *ssid, const char *password);
+int safesense_wifi_ap_client_connected(void);

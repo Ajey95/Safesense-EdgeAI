@@ -26,6 +26,7 @@
 #define I2C_SCL_GPIO 22
 #define MQ135_ADC_CHANNEL ADC_CHANNEL_6
 #define CSI_PACKET_PORT 3333
+#define LAPTOP_DISCOVERY_PORT 3334
 
 static const char *TAG = "safesense_tx";
 static delivery_queue_t queue;
@@ -37,10 +38,19 @@ static float minute_history[FORECAST_HISTORY_MINUTES][FORECAST_CHANNELS];
 static unsigned history_count;
 static int64_t last_history_us;
 static int64_t last_forecast_alert_us;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+static uint32_t laptop_ipv4;
+static portMUX_TYPE laptop_ip_lock = portMUX_INITIALIZER_UNLOCKED;
+static bool test_alert_requested;
+#endif
 static bool forecast_demo_range_crossed(const float prediction[FORECAST_HORIZONS][FORECAST_CHANNELS],
                                         uint8_t room, uint8_t *minutes, uint8_t *channel);
 static void make_event_id(char out[DELIVERY_EVENT_ID_MAX]);
 static void flush_pending(void);
+static bool transport_link_connected(void);
+static bool add_alert_metadata(delivery_record_t *record, bool alert,
+                               uint8_t room, uint8_t minutes, uint8_t channel,
+                               bool simulated);
 
 #if CONFIG_SAFESENSE_TX_SCENARIO_SERIAL_DEMO
 static void scenario_serial_loop(void) {
@@ -105,14 +115,14 @@ static void scenario_serial_loop(void) {
             .pressure_pa = value[2], .gas_valid = true, .heat_stable = true,
             .gas_resistance_ohm = value[3], .mq135_valid = true,
             .mq135_adc_raw = (int)value[4]};
-        int length = tx_format_json(record.payload, sizeof(record.payload), &sample);
-        if (length < 0 || length + 18 >= sizeof(record.payload)) {
+        if (tx_format_json(record.payload, sizeof(record.payload), &sample) < 0 ||
+            !add_alert_metadata(&record, alert, (uint8_t)room, alert_minutes,
+                                alert_channel, true)) {
             printf("DEMO_ERROR|FORMAT\n");
             continue;
         }
-        memcpy(record.payload + length - 1, ",\"simulated\":true}", 19);
         const bool persisted = delivery_queue_enqueue(&queue, &record) == 0;
-        if (!fault && persisted && safesense_wifi_station_connected()) flush_pending();
+        if (!fault && persisted && transport_link_connected()) flush_pending();
         const int pending = persisted ? delivery_queue_contains(&queue, record.event_id) : -1;
         const bool rx_ack = persisted && pending == 0;
         bool bt_ack = false;
@@ -222,14 +232,86 @@ static bool start_sensor(void) {
         };
         if (i2c_new_master_bus(&bus_config, &i2c_bus) != ESP_OK) return false;
     }
-    const bme680_status_t status = bme680_esp_idf_init(&bme, i2c_bus, BME680_I2C_ADDRESS_LOW, NULL);
-    if (status != BME680_OK) {
-        ESP_LOGW(TAG, "Custom BME680 init at 0x76 failed: %d", status);
-        return false;
+    const uint8_t addresses[] = {BME680_I2C_ADDRESS_LOW, BME680_I2C_ADDRESS_HIGH};
+    for (size_t index = 0; index < sizeof(addresses); ++index) {
+        const uint8_t address = addresses[index];
+        const esp_err_t probe = i2c_master_probe(i2c_bus, address, 50);
+        if (probe != ESP_OK) {
+            ESP_LOGW(TAG, "No I2C ACK at BME680 address 0x%02x: %s", address,
+                     esp_err_to_name(probe));
+            continue;
+        }
+        const bme680_status_t status = bme680_esp_idf_init(&bme, i2c_bus, address, NULL);
+        if (status == BME680_OK) {
+            ESP_LOGI(TAG, "Custom BME680 initialized at 0x%02x on GPIO21/GPIO22", address);
+            return true;
+        }
+        ESP_LOGW(TAG, "Custom BME680 init at 0x%02x failed: %d", address, status);
     }
-    ESP_LOGI(TAG, "Custom BME680 initialized at 0x76 on GPIO21/GPIO22");
-    return true;
+    return false;
 }
+
+static bool add_alert_metadata(delivery_record_t *record, bool alert,
+                               uint8_t room, uint8_t minutes, uint8_t channel,
+                               bool simulated) {
+    const size_t size = strlen(record->payload);
+    if (size < 2 || record->payload[size - 1] != '}') return false;
+    const size_t available = sizeof(record->payload) - size + 1;
+    const int written = alert
+        ? snprintf(record->payload + size - 1, available,
+                   ",\"simulated\":%s,\"forecast_alert\":{\"room\":%u,\"horizon_minutes\":%u,\"channel\":%u}}",
+                   simulated ? "true" : "false", room, minutes, channel)
+        : snprintf(record->payload + size - 1, available, ",\"simulated\":%s}",
+                   simulated ? "true" : "false");
+    return written > 0 && (size_t)written < sizeof(record->payload) - size + 1;
+}
+
+static bool transport_link_connected(void) {
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    return safesense_wifi_ap_client_connected();
+#else
+    return safesense_wifi_station_connected();
+#endif
+}
+
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+static void laptop_discovery_task(void *unused) {
+    (void)unused;
+    const int fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    if (fd < 0) { ESP_LOGE(TAG, "Laptop discovery socket failed"); vTaskDelete(NULL); return; }
+    struct sockaddr_in local = {.sin_family = AF_INET,
+                                .sin_port = htons(LAPTOP_DISCOVERY_PORT),
+                                .sin_addr.s_addr = htonl(INADDR_ANY)};
+    if (bind(fd, (struct sockaddr *)&local, sizeof(local)) != 0) {
+        ESP_LOGE(TAG, "Laptop discovery bind failed"); close(fd); vTaskDelete(NULL); return;
+    }
+    while (true) {
+        char message[40];
+        struct sockaddr_in peer = {0};
+        socklen_t peer_length = sizeof(peer);
+        const int length = recvfrom(fd, message, sizeof(message), 0,
+                                    (struct sockaddr *)&peer, &peer_length);
+        if ((ntohl(peer.sin_addr.s_addr) & 0xFFFFFF00u) != 0xC0A80400u) continue;
+        if (length == (int)strlen("SAFESENSE_TEST_ALERT_V1") &&
+            memcmp(message, "SAFESENSE_TEST_ALERT_V1", (size_t)length) == 0) {
+            portENTER_CRITICAL(&laptop_ip_lock);
+            test_alert_requested = true;
+            portEXIT_CRITICAL(&laptop_ip_lock);
+            ESP_LOGW(TAG, "Transport test alert requested by nearby laptop");
+            continue;
+        }
+        if (length != (int)strlen("SAFESENSE_LAPTOP_V1") ||
+            memcmp(message, "SAFESENSE_LAPTOP_V1", (size_t)length) != 0) continue;
+        portENTER_CRITICAL(&laptop_ip_lock);
+        laptop_ipv4 = peer.sin_addr.s_addr;
+        portEXIT_CRITICAL(&laptop_ip_lock);
+        char host[INET_ADDRSTRLEN];
+        if (inet_ntop(AF_INET, &peer.sin_addr, host, sizeof(host)))
+            ESP_LOGI(TAG, "Laptop receiver discovered at %s:%d", host,
+                     CONFIG_SAFESENSE_TX_LAPTOP_HTTP_PORT);
+    }
+}
+#endif
 
 typedef struct { char body[256]; size_t used; bool overflow; } http_reply_t;
 
@@ -247,10 +329,27 @@ static esp_err_t http_event(esp_http_client_event_t *event) {
 }
 
 static bool post_record(const delivery_record_t *record) {
-    if (!CONFIG_SAFESENSE_TX_RX_HTTP_URL[0]) return false;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    char direct_url[128];
+#endif
+    const char *endpoint = CONFIG_SAFESENSE_TX_RX_HTTP_URL;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    uint32_t ip;
+    portENTER_CRITICAL(&laptop_ip_lock);
+    ip = laptop_ipv4;
+    portEXIT_CRITICAL(&laptop_ip_lock);
+    if (!ip || !safesense_wifi_ap_client_connected()) return false;
+    struct in_addr address = {.s_addr = ip};
+    char host[INET_ADDRSTRLEN];
+    if (!inet_ntop(AF_INET, &address, host, sizeof(host))) return false;
+    snprintf(direct_url, sizeof(direct_url), "http://%s:%d/api/v1/tx/environment",
+             host, CONFIG_SAFESENSE_TX_LAPTOP_HTTP_PORT);
+    endpoint = direct_url;
+#endif
+    if (!endpoint[0]) return false;
     http_reply_t reply = {0};
     const esp_http_client_config_t config = {
-        .url = CONFIG_SAFESENSE_TX_RX_HTTP_URL,
+        .url = endpoint,
         .timeout_ms = 5000,
         .event_handler = http_event,
         .user_data = &reply,
@@ -264,7 +363,7 @@ static bool post_record(const delivery_record_t *record) {
     const int status = result == ESP_OK ? esp_http_client_get_status_code(client) : 0;
     const bool accepted = result == ESP_OK && (status == 200 || status == 202) &&
         !reply.overflow && tx_ack_matches(reply.body, reply.used, record->event_id);
-    if (!accepted) ESP_LOGW(TAG, "RX HTTP deferred: %s status=%d event=%s", esp_err_to_name(result), status, record->event_id);
+    if (!accepted) ESP_LOGW(TAG, "Wi-Fi HTTP deferred: %s status=%d event=%s", esp_err_to_name(result), status, record->event_id);
     esp_http_client_cleanup(client);
     return accepted;
 }
@@ -281,7 +380,7 @@ static void flush_pending(void) {
             ESP_LOGE(TAG, "HTTP accepted %s but NVS queue acknowledgement failed", record.event_id);
             break;
         }
-        ESP_LOGI(TAG, "RX accepted event=%s pending=%u", record.event_id, delivery_queue_count(&queue));
+        ESP_LOGI(TAG, "Wi-Fi receiver accepted event=%s pending=%u", record.event_id, delivery_queue_count(&queue));
     }
 }
 
@@ -292,6 +391,7 @@ static void make_event_id(char out[DELIVERY_EVENT_ID_MAX]) {
              (unsigned long)nonce[0], (unsigned long)nonce[1], (unsigned long)nonce[2]);
 }
 
+#if !CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
 static void udp_probe_task(void *unused) {
     (void)unused;
     const TickType_t probe_delay_ticks = pdMS_TO_TICKS(CONFIG_SAFESENSE_TX_CSI_PROBE_INTERVAL_MS);
@@ -315,6 +415,7 @@ static void udp_probe_task(void *unused) {
         vTaskDelay(probe_delay_ticks);
     }
 }
+#endif
 
 void app_main(void) {
     if (!migrate_pre_fix_test_queue()) {
@@ -341,17 +442,31 @@ void app_main(void) {
     if (!mq_ready) ESP_LOGW(TAG, "MQ-135 raw ADC GPIO34 initialization failed");
 
     bool wifi_ready = false;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    wifi_ready = safesense_wifi_ap_start(CONFIG_SAFESENSE_TX_LAPTOP_AP_SSID,
+                                        CONFIG_SAFESENSE_TX_LAPTOP_AP_PASSWORD) == 0;
+    if (wifi_ready) {
+        ESP_LOGI(TAG, "Direct laptop AP ready SSID=%s gateway=192.168.4.1",
+                 CONFIG_SAFESENSE_TX_LAPTOP_AP_SSID);
+        if (xTaskCreate(laptop_discovery_task, "laptop_discovery", 4096,
+                        NULL, 4, NULL) != pdPASS)
+            ESP_LOGE(TAG, "Laptop discovery task failed");
+    } else ESP_LOGE(TAG, "Direct laptop AP failed to start");
+#else
     if (CONFIG_SAFESENSE_TX_WIFI_SSID[0]) {
         wifi_ready = safesense_wifi_station_start(CONFIG_SAFESENSE_TX_WIFI_SSID,
                                         CONFIG_SAFESENSE_TX_WIFI_PASSWORD, 30000) == 0;
         if (!wifi_ready) ESP_LOGW(TAG, "Wi-Fi not ready; records remain in NVS");
     } else ESP_LOGW(TAG, "Wi-Fi SSID not configured; local sensing and NVS logging only");
+#endif
+#if !CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
     bool probe_started = false;
     if (wifi_ready && CONFIG_SAFESENSE_TX_RX_UDP_IP[0]) {
         probe_started = xTaskCreate(udp_probe_task, "csi_probe", 4096, NULL, 5, NULL) == pdPASS;
         if (!probe_started) ESP_LOGE(TAG, "CSI UDP probe task could not start");
     }
     if (wifi_ready && CONFIG_SAFESENSE_TX_RX_HTTP_URL[0]) flush_pending();
+#endif
 
 #if CONFIG_SAFESENSE_TX_SCENARIO_SERIAL_DEMO
     scenario_serial_loop();
@@ -359,14 +474,16 @@ void app_main(void) {
 #endif
 
     while (true) {
-        const bool connected_now = safesense_wifi_station_connected();
+        const bool connected_now = transport_link_connected();
         if (connected_now && !wifi_ready)
             ESP_LOGI(TAG, "Wi-Fi connected after startup wait; resuming RX delivery");
         wifi_ready = connected_now;
+#if !CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
         if (wifi_ready && !probe_started && CONFIG_SAFESENSE_TX_RX_UDP_IP[0]) {
             if (xTaskCreate(udp_probe_task, "csi_probe", 4096, NULL, 5, NULL) == pdPASS)
                 probe_started = true;
         }
+#endif
         if (!bme_ready) bme_ready = start_sensor();
         bme680_reading_t reading = {0};
         const bme680_status_t bme_status = bme_ready
@@ -389,8 +506,22 @@ void app_main(void) {
         else ESP_LOGW(TAG, "MQ-135 raw ADC unavailable");
 
         uint8_t alert_minutes = 0, alert_channel = 0;
-        const bool forecast_alert = bme_status == BME680_OK &&
+        bool forecast_alert = bme_status == BME680_OK &&
             update_forecast_history(&reading, &mq_sample, &alert_minutes, &alert_channel);
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+        portENTER_CRITICAL(&laptop_ip_lock);
+        const bool udp_transport_test = test_alert_requested;
+        test_alert_requested = false;
+        portEXIT_CRITICAL(&laptop_ip_lock);
+        const bool transport_test = udp_transport_test || bt_alert_take_test_request();
+        if (transport_test) {
+            forecast_alert = true;
+            alert_minutes = 5;
+            alert_channel = 0;
+        }
+#else
+        const bool transport_test = false;
+#endif
         delivery_record_t record = {0};
         make_event_id(record.event_id);
         const tx_sample_t sample = {
@@ -403,21 +534,39 @@ void app_main(void) {
             .gas_resistance_ohm = reading.gas_resistance_ohm,
             .mq135_valid = mq_sample.healthy, .mq135_adc_raw = mq_sample.signal,
         };
-        if (tx_format_json(record.payload, sizeof(record.payload), &sample) < 0)
+        bool queued = false;
+        bool event_valid = false;
+        if (tx_format_json(record.payload, sizeof(record.payload), &sample) < 0 ||
+            !add_alert_metadata(&record, forecast_alert, CONFIG_SAFESENSE_FORECAST_ROOM,
+                                alert_minutes, alert_channel, transport_test))
             ESP_LOGE(TAG, "TX JSON could not be formatted; check device ID or sensor values");
-        else if (delivery_queue_enqueue(&queue, &record) != 0)
-            ESP_LOGE(TAG, "NVS queue full/write failed; pending=%u", delivery_queue_count(&queue));
-        else ESP_LOGI(TAG, "Persisted event=%s pending=%u JSON=%s", record.event_id,
-                      delivery_queue_count(&queue), record.payload);
-        if (wifi_ready && CONFIG_SAFESENSE_TX_RX_HTTP_URL[0]) flush_pending();
+        else {
+            event_valid = true;
+            if (delivery_queue_enqueue(&queue, &record) != 0)
+                ESP_LOGE(TAG, "NVS queue full/write failed; pending=%u", delivery_queue_count(&queue));
+            else {
+                queued = true;
+                ESP_LOGI(TAG, "Persisted event=%s pending=%u JSON=%s", record.event_id,
+                         delivery_queue_count(&queue), record.payload);
+            }
+        }
+        if (wifi_ready) flush_pending();
+        const bool wifi_sample_acked = queued && delivery_queue_contains(&queue, record.event_id) == 0;
+        if (event_valid && !wifi_sample_acked && bt_alert_connected()) {
+            const bool bt_sample_stored = bt_alert_send_sample(record.event_id, record.payload, 1800);
+            ESP_LOGI(TAG, "Bluetooth sensor event=%s laptop_stored=%s", record.event_id,
+                     bt_sample_stored ? "YES" : "NO");
+        }
         if (forecast_alert) {
-            const int still_pending = delivery_queue_contains(&queue, record.event_id);
-            ESP_LOGW(TAG, "DEMO forecast range crossing in %u min channel=%u event=%s RX_ACK=%s",
+            const bool wifi_acked = wifi_sample_acked;
+            ESP_LOGW(TAG, "%s alert in %u min channel=%u event=%s NVS_STORED=%s WIFI_ACK=%s",
+                     transport_test ? "Transport test" : "DEMO forecast range crossing",
                      alert_minutes, alert_channel, record.event_id,
-                     still_pending == 0 ? "YES" : "NO");
-            if (still_pending != 0) {
+                     queued ? "YES" : "NO", wifi_acked ? "YES" : "NO");
+            if (!wifi_acked) {
                 const bool bt_received = bt_alert_send(record.event_id,
-                    CONFIG_SAFESENSE_FORECAST_ROOM, alert_minutes, alert_channel, false, 2500);
+                    CONFIG_SAFESENSE_FORECAST_ROOM, alert_minutes, alert_channel,
+                    transport_test, 2500);
                 ESP_LOGW(TAG, "Nearby laptop BT stored event=%s result=%s",
                          record.event_id, bt_received ? "CONFIRMED" : "UNCONFIRMED");
             }

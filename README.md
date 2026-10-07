@@ -15,7 +15,9 @@ More detail: [architecture](docs/architecture.md), [implementation progress](doc
 
 The new [Forecast Lab](docs/forecast_lab.md) provides a synthetic, held-out-scenario 30-minute TinyML demonstration, a reference-matched themed dashboard at `/forecast`, and a separately labelled physical TX replay path with Wi-Fi and nearby-laptop Bluetooth alert receipts. Run `uvicorn safesense.main:app --host 127.0.0.1 --port 8000` and open `http://127.0.0.1:8000/forecast`.
 
-The [Live Hardware view](docs/live_hardware_integration.md) at `/forecast?view=live` shows TX readings once the RX HTTP bridge forwards them, with exact event IDs and separate Wi-Fi, RX, backend, and nearby-laptop Bluetooth receipt states. It excludes synthetic scenario replay and labels disconnected or stale readings.
+The [Environmental Forecasting v1 dataset](https://huggingface.co/datasets/Ajeya95/environmental-forecast-v1) contains project-generated **synthetic** time series. Its operational scenarios are supported by cited guidance in the dataset card, but its rows are not physical sensor captures. Live ESP32 readings are a separate demonstration and do not establish real-room forecast accuracy.
+
+The [Live Hardware view](docs/live_hardware_integration.md) at `/forecast?view=live` shows physical sensor readings through direct laptop Wi-Fi, paired laptop Bluetooth, direct USB, or the optional RX bridge when those routes are used. It excludes synthetic scenario replay and labels disconnected or stale readings. Receipt states are shown separately when the corresponding route provides evidence. The [single-board transport runbook](docs/direct_laptop_transport.md) records the direct Wi-Fi and Bluetooth setup and its physical test boundaries.
 
 ## Current V1 path
 

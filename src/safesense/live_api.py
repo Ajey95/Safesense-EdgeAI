@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Literal
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest, urlopen
+import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import desc, select
 from sqlalchemy.exc import IntegrityError
@@ -34,6 +37,95 @@ class HeartbeatIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Literal["rx_http_bridge", "bt_alert_receiver"]
     status: Literal["empty", "forwarded", "deferred", "listening", "receipt"]
+
+
+class FaultIn(BaseModel):
+    enabled: bool
+
+
+def _local_receiver(path: str, data: dict | None = None) -> dict:
+    payload = None if data is None else json.dumps(data).encode("utf-8")
+    request = UrlRequest(f"http://127.0.0.1:8765{path}", data=payload,
+                         headers={"Content-Type": "application/json",
+                                  "X-SafeSense-Control": "dashboard"} if payload else {})
+    try:
+        with urlopen(request, timeout=2) as response:
+            return json.load(response)
+    except HTTPError as error:
+        try:
+            detail = json.load(error).get("error", str(error))
+        except (ValueError, AttributeError):
+            detail = str(error)
+        raise HTTPException(status_code=error.code, detail=detail) from error
+    except (URLError, TimeoutError, OSError, ValueError) as error:
+        raise HTTPException(status_code=503, detail=f"Direct laptop receiver unavailable: {error}") from error
+
+
+@router.get("/direct/status")
+def direct_receiver_status() -> dict:
+    return _local_receiver("/status")
+
+
+@router.post("/direct/fault")
+def set_direct_fault(change: FaultIn, request: Request,
+                     control: str | None = Header(default=None, alias="X-SafeSense-Control")) -> dict:
+    if not request.client or request.client.host not in {"127.0.0.1", "::1"}:
+        raise HTTPException(status_code=403, detail="Local dashboard control only")
+    if control != "dashboard":
+        raise HTTPException(status_code=403, detail="Dashboard control header required")
+    return _local_receiver("/fault", change.model_dump())
+
+
+@router.post("/direct/test-alert")
+def request_direct_test_alert(request: Request,
+                              control: str | None = Header(default=None, alias="X-SafeSense-Control")) -> dict:
+    if not request.client or request.client.host not in {"127.0.0.1", "::1"}:
+        raise HTTPException(status_code=403, detail="Local dashboard control only")
+    if control != "dashboard":
+        raise HTTPException(status_code=403, detail="Dashboard control header required")
+    return _local_receiver("/test-alert", {})
+
+
+@router.get("/direct")
+def direct_laptop_snapshot(session: Session = Depends(get_session)) -> dict:
+    markers = session.scalars(select(DeliveryReceipt).where(
+        DeliveryReceipt.kind.in_(("LAPTOP_WIFI_STORED", "LAPTOP_BT_SENSOR_STORED"))).order_by(
+        desc(DeliveryReceipt.reported_at)).limit(100)).all()
+    route_by_id = {}
+    for marker in markers:
+        route_by_id.setdefault(marker.event_id,
+                               "DIRECT_BLUETOOTH" if marker.kind == "LAPTOP_BT_SENSOR_STORED"
+                               else "DIRECT_WIFI")
+    ids = [marker.event_id for marker in markers]
+    rows = session.scalars(select(TelemetryEvent).where(
+        TelemetryEvent.event_id.in_(ids)).order_by(
+        desc(TelemetryEvent.received_at)).limit(20)).all() if ids else []
+    direct = [row for row in rows if row.payload.get("firmware_version") in
+              {"direct-wifi-bme680-mq135", "synthetic-forecast-demo"}]
+    receipts = session.scalars(select(DeliveryReceipt).where(
+        DeliveryReceipt.event_id.in_([row.event_id for row in direct]),
+        DeliveryReceipt.kind == "BLUETOOTH_STORED")).all() if direct else []
+    bt_ids = {receipt.event_id for receipt in receipts
+              if receipt.details.get("reporter") == "bt-alert-receiver"}
+    recent_bt = session.scalars(select(DeliveryReceipt).where(
+        DeliveryReceipt.kind == "BLUETOOTH_STORED").order_by(
+        desc(DeliveryReceipt.reported_at)).limit(30)).all()
+    wifi_ids = {row.event_id for row in direct
+                if route_by_id.get(row.event_id) == "DIRECT_WIFI"}
+    return {"as_of": datetime.now(timezone.utc).isoformat(), "events": [
+        {"event_id": row.event_id, "device_id": row.device_id,
+         "backend_stored_at": row.received_at.isoformat(),
+         "environment": row.payload.get("environment") or {},
+         "bluetooth_stored": row.event_id in bt_ids,
+         "test_alert": row.payload.get("firmware_version") == "synthetic-forecast-demo",
+         "route": route_by_id.get(row.event_id, "UNKNOWN")}
+        for row in direct],
+        "bluetooth_only": [
+            {"event_id": receipt.event_id,
+             "reported_at": receipt.reported_at.isoformat(),
+             "details": receipt.details}
+            for receipt in recent_bt if receipt.event_id not in wifi_ids
+            and receipt.details.get("reporter") == "bt-alert-receiver"][:10]}
 
 
 @router.post("/receipts", status_code=202)
