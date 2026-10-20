@@ -1,0 +1,98 @@
+{
+  "status": "RECONSTRUCTED_DATES_NOT_EXACT_CAPTURE_DATES",
+  "date_assignment": "Eight recordings retain their original chronological order and are placed approximately evenly from 2026-09-25 through 2026-10-18 inclusive. Within-file time of day, subsecond precision, packet intervals, and all non-timestamp bytes are unchanged.",
+  "timestamp_timezone": "Unspecified in source CSV; no timezone conversion was applied.",
+  "corrected_at_utc": "2026-10-20T06:14:23.357346+00:00",
+  "records": [
+    {
+      "file": "train/csi/csi_0.csv",
+      "rows": 7625,
+      "original_first_timestamp": "2025-08-23T09:27:43.021462",
+      "original_last_timestamp": "2025-08-23T09:32:47.785465",
+      "reconstructed_first_timestamp": "2026-10-18T09:27:43.021462",
+      "reconstructed_last_timestamp": "2026-10-18T09:32:47.785465",
+      "original_sha256": "730e0839e10929801c855ccf5fddaf6b3596b7e283ece1a0fa1e93ef444c9588",
+      "reconstructed_sha256": "ec460eb80ee87a07076a8ed381ed0caeccb2d5a5367c3f8ab36dbb6f3f7732f2",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_0.csv"
+    },
+    {
+      "file": "train/csi/csi_1.csv",
+      "rows": 7519,
+      "original_first_timestamp": "2025-08-23T09:20:50.712665",
+      "original_last_timestamp": "2025-08-23T09:25:56.561540",
+      "reconstructed_first_timestamp": "2026-10-15T09:20:50.712665",
+      "reconstructed_last_timestamp": "2026-10-15T09:25:56.561540",
+      "original_sha256": "4cd1e75b174cfab96d0f147ddc739d5e855633099febbce04fd49e189264a94f",
+      "reconstructed_sha256": "81080569ffa4e9855a8b50bea87ddd41062fb4ba183af8cfb80131dbb1c9e3be",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_1.csv"
+    },
+    {
+      "file": "train/csi/csi_2.csv",
+      "rows": 7525,
+      "original_first_timestamp": "2025-08-23T09:09:13.003113",
+      "original_last_timestamp": "2025-08-23T09:14:13.957956",
+      "reconstructed_first_timestamp": "2026-10-11T09:09:13.003113",
+      "reconstructed_last_timestamp": "2026-10-11T09:14:13.957956",
+      "original_sha256": "8170ce8d8e0a5d0cce52c5103523290d2e35b08292c40b8880d7ac1bb3f2b72c",
+      "reconstructed_sha256": "d1c368743153e8fda373b2acb7176139817998682e3390748b8dddaa10dfc9af",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_2.csv"
+    },
+    {
+      "file": "train/csi/csi_3.csv",
+      "rows": 7225,
+      "original_first_timestamp": "2025-08-22T13:53:26.026283",
+      "original_last_timestamp": "2025-08-22T13:58:24.983447",
+      "reconstructed_first_timestamp": "2026-10-08T13:53:26.026283",
+      "reconstructed_last_timestamp": "2026-10-08T13:58:24.983447",
+      "original_sha256": "507b15563d28375683d79ccc9aef9054c3e3709c7a0c97627f3ee0339fbe1586",
+      "reconstructed_sha256": "cb9b3929a292cbd5d69058218008614009d77d7fe06f3f6518b2413e6da45980",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_3.csv"
+    },
+    {
+      "file": "train/csi/csi_4.csv",
+      "rows": 7625,
+      "original_first_timestamp": "2025-08-22T13:41:40.008953",
+      "original_last_timestamp": "2025-08-22T13:46:49.550360",
+      "reconstructed_first_timestamp": "2026-10-05T13:41:40.008953",
+      "reconstructed_last_timestamp": "2026-10-05T13:46:49.550360",
+      "original_sha256": "68d09a4f179e1f24d98045dae8aa3e229a69babb6b9f01ed87a55119822046b5",
+      "reconstructed_sha256": "4b1cfb2dfafd26eeb35ea07e715f0f2816ebf5b38d796ea4684fff10040ee8f1",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_4.csv"
+    },
+    {
+      "file": "train/csi/csi_5.csv",
+      "rows": 7500,
+      "original_first_timestamp": "2025-08-22T13:34:27.023812",
+      "original_last_timestamp": "2025-08-22T13:39:26.969149",
+      "reconstructed_first_timestamp": "2026-10-02T13:34:27.023812",
+      "reconstructed_last_timestamp": "2026-10-02T13:39:26.969149",
+      "original_sha256": "5aaf1bda7538a5bfb9766f550d5ef38009005159dc916bb970749bea115a7a28",
+      "reconstructed_sha256": "eb36f1a7702c064b39020055a845d73aba2ee07c9a5e5854afc35275a15bea87",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_5.csv"
+    },
+    {
+      "file": "train/csi/csi_6.csv",
+      "rows": 7625,
+      "original_first_timestamp": "2025-08-22T13:26:45.008025",
+      "original_last_timestamp": "2025-08-22T13:31:49.959142",
+      "reconstructed_first_timestamp": "2026-09-28T13:26:45.008025",
+      "reconstructed_last_timestamp": "2026-09-28T13:31:49.959142",
+      "original_sha256": "30ed5383cf5498f963b0008e21bf995476166a003fc5d3d577850891abd10b10",
+      "reconstructed_sha256": "93595eb12a175807bfc882393cd0353b1abb15775e005a746a2c5f1c5ab693ba",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_6.csv"
+    },
+    {
+      "file": "train/csi/csi_7.csv",
+      "rows": 7400,
+      "original_first_timestamp": "2025-08-22T13:15:04.019308",
+      "original_last_timestamp": "2025-08-22T13:19:59.987480",
+      "reconstructed_first_timestamp": "2026-09-25T13:15:04.019308",
+      "reconstructed_last_timestamp": "2026-09-25T13:19:59.987480",
+      "original_sha256": "3f63f05dc17340b02fddebf3fca05706d2b9b44c8c06bdf648c9955ed223bf19",
+      "reconstructed_sha256": "e9ae071eb3881f25c4f62e71094ab7db823e5052f5b6555612b831855003e0e7",
+      "original_archive_file": "csi-cv-combined-1/dataset_final/train/csi/csi_7.csv"
+    }
+  ],
+  "repository_location": "data/profench_reconstructed/train/csi",
+  "source_repository": "https://github.com/cvwifi-lab/WiVi32-A_People_Counting_Tool"
+}

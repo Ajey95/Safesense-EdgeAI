@@ -19,11 +19,13 @@ tables. The scenario forecast remains synthetic and separate from physical
 telemetry. See [the review click path](docs/final_review_demo_flow.md) for the
 routes and evidence limits.
 
-The WiVi32/PRoFENCH CSI recordings and the local CSI model checkpoint are not
-part of this source release. The dataset authors restrict access to academic
-research, so obtain the recordings from their source and run the documented
-training workflow before expecting the replay/count endpoint to work in a new
-checkout. The within-recording baseline is not validated live-room accuracy.
+Eight WiVi32/PRoFENCH CSI recordings with **reconstructed dates** are included
+under [data/profench_reconstructed](data/profench_reconstructed/README.md),
+with file hashes and the date assignment documented there. These dates are
+estimated placements between September 25 and October 18, 2026, not verified
+capture dates. The project owner reports written permission to republish the
+CSV files. The local CSI model checkpoint is not part of this source release;
+the within-recording baseline is not validated live-room accuracy.
 
 ## Architecture
 
