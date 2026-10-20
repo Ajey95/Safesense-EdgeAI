@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -8,6 +8,8 @@ from sqlalchemy.orm import sessionmaker
 
 from safesense.database import Base, get_session
 from safesense.main import app
+from safesense import live_api
+from scripts import transport_handoff, wifi_demo_session
 
 
 def _telemetry(event_id: str, *, simulated: bool = False) -> dict:
@@ -106,6 +108,58 @@ def test_transport_receipt_rejects_mismatched_reporter(client):
     assert response.status_code == 403
 
 
+def test_wireless_board_queue_report_joins_exact_event_and_marks_age(client):
+    event_id = f"tx-{uuid4().hex}"
+    physical = _telemetry(event_id)
+    physical["communication"] = None
+    physical["firmware_version"] = "direct-wifi-bme680-mq135"
+    assert client.post("/api/v1/telemetry", json=physical,
+                       headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).status_code == 202
+    report = {"status_id": "st-0123456789abcdef", "device_id": "safesense-tx-01",
+              "sequence": 2, "uptime_ms": 1234, "queue_depth": 0,
+              "pending_event_ids": [], "last_enqueued_id": event_id,
+              "last_acked_id": event_id, "last_ack_route": "WIFI",
+              "laptop_stored_at_utc": datetime.now(timezone.utc).isoformat()}
+    assert client.post("/api/v1/live/board-queue", json=report).status_code == 403
+    saved = client.post("/api/v1/live/board-queue", json=report,
+                        headers={"X-SafeSense-Ingress": "direct-laptop-receiver"})
+    assert saved.status_code == 202
+    assert saved.json()["accepted"] is True
+    assert client.post("/api/v1/live/board-queue", json=report,
+                       headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).json()["duplicate"] is True
+    assert client.post("/api/v1/live/board-queue", json=report,
+                       headers={"X-SafeSense-Ingress": "bt-sensor-receiver"}).json()["duplicate"] is True
+    snapshot = client.get("/api/v1/live/direct").json()
+    assert snapshot["board_queue"]["queue_depth"] == 0
+    assert snapshot["board_queue"]["age_seconds"] < 5
+    assert snapshot["board_queue_proof"]["event_id"] == event_id
+    assert snapshot["board_queue_proof"]["receiver_receipt_at"]
+    assert snapshot["board_queue_proof"]["backend_stored_at"]
+    invalid = {**report, "status_id": "st-fedcba9876543210", "queue_depth": 1}
+    assert client.post("/api/v1/live/board-queue", json=invalid,
+                       headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).status_code == 422
+    bluetooth_report = {**report, "status_id": "st-abcdef0123456789", "sequence": 50,
+                        "last_ack_route": "BLUETOOTH"}
+    assert client.post("/api/v1/live/board-queue", json=bluetooth_report,
+                       headers={"X-SafeSense-Ingress": "bt-sensor-receiver"}).status_code == 202
+    routes = {row["route"] for row in client.get("/api/v1/live/direct").json()["board_queue_history"]}
+    assert routes == {"WIFI", "BLUETOOTH"}
+
+
+def test_delayed_board_status_is_stale_even_when_backend_receives_it_now(client):
+    report = {"status_id": "st-fedcba9876543210", "device_id": "safesense-tx-01",
+              "sequence": 1, "uptime_ms": 100, "queue_depth": 0,
+              "pending_event_ids": [], "last_enqueued_id": "",
+              "last_acked_id": "", "last_ack_route": "NONE",
+              "laptop_stored_at_utc": (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()}
+    response = client.post("/api/v1/live/board-queue", json=report,
+                           headers={"X-SafeSense-Ingress": "bt-sensor-receiver"})
+    assert response.status_code == 202
+    status = client.get("/api/v1/live/direct").json()["board_queue"]
+    assert status["route"] == "BLUETOOTH"
+    assert status["age_seconds"] >= 180
+
+
 def test_synthetic_bluetooth_receipt_is_not_physical_evidence(client):
     event_id = f"tx-{uuid4().hex}"
     assert client.post("/api/v1/live/receipts", json={
@@ -145,3 +199,65 @@ def test_bluetooth_sensor_ingress_is_a_physical_reading_with_its_own_route(clien
     assert reading["route"] == "DIRECT_BLUETOOTH"
     assert reading["environment"]["temperature_c"] == 28.6
     assert reading["environment"]["gas_adc_raw"] == 427
+    assert reading["usb_sample_seen_at"] is None
+    assert client.post("/api/v1/telemetry", json=sample,
+                       headers={"X-SafeSense-Ingress": "usb-serial-receiver"}).status_code == 202
+    refreshed = next(row for row in client.get("/api/v1/live/direct").json()["events"]
+                     if row["event_id"] == event_id)
+    assert refreshed["usb_sample_seen_at"] is not None
+
+
+def test_wifi_receipts_remain_visible_after_many_bluetooth_deliveries(client):
+    wifi_id = f"tx-{uuid4().hex}"
+    wifi_sample = _telemetry(wifi_id)
+    wifi_sample["communication"] = None
+    wifi_sample["firmware_version"] = "direct-wifi-bme680-mq135"
+    wifi_sample["csi"]["rx_node"] = "UNKNOWN"
+    assert client.post("/api/v1/telemetry", json=wifi_sample,
+                       headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).status_code == 202
+    for _ in range(9):
+        test_alert = _telemetry(f"tx-{uuid4().hex}", simulated=True)
+        test_alert["communication"] = None
+        assert client.post("/api/v1/telemetry", json=test_alert,
+                           headers={"X-SafeSense-Ingress": "direct-laptop-receiver"}).status_code == 202
+    for _ in range(31):
+        bt_sample = _telemetry(f"tx-{uuid4().hex}")
+        bt_sample["communication"] = None
+        bt_sample["firmware_version"] = "direct-wifi-bme680-mq135"
+        bt_sample["csi"]["rx_node"] = "UNKNOWN"
+        assert client.post("/api/v1/telemetry", json=bt_sample,
+                           headers={"X-SafeSense-Ingress": "bt-sensor-receiver"}).status_code == 202
+    snapshot = client.get("/api/v1/live/direct").json()
+    assert wifi_id not in {row["event_id"] for row in snapshot["events"]}
+    assert wifi_id not in {row["event_id"] for row in snapshot["wifi_receipts"]}
+    wifi = next(row for row in snapshot["wifi_sensor_deliveries"] if row["event_id"] == wifi_id)
+    assert wifi["receipt_reported_at"]
+    assert wifi["environment"]["temperature_c"] == 28.6
+    assert wifi["environment"]["gas_adc_raw"] == 427
+    assert wifi["test_alert"] is False
+    assert snapshot["bluetooth_receipts"]
+    assert snapshot["bluetooth_receipts"][0]["environment"]["humidity_pct"] == 61.2
+    assert snapshot["bluetooth_sensor_deliveries"]
+    assert all(row["event_id"] != wifi_id for row in snapshot["bluetooth_receipts"])
+
+
+def test_handoff_requires_new_bluetooth_frame_and_matching_backend_receipt(client, monkeypatch, tmp_path):
+    monkeypatch.setattr(transport_handoff, "REQUEST", tmp_path / "request.json")
+    monkeypatch.setattr(transport_handoff, "FRAME", tmp_path / "frame.json")
+    monkeypatch.setattr(wifi_demo_session, "current_ssid", lambda: "Amrita")
+    monkeypatch.setattr(live_api, "_ensure_bluetooth_receiver", lambda db: None)
+    requested = transport_handoff.request_reconnect()
+    endpoint = "/api/v1/live/direct/transport-handoff"
+    assert client.get(endpoint).json()["state"] == "WAITING_BLUETOOTH"
+    event_id = f"tx-{uuid4().hex}"
+    transport_handoff.record_frame(event_id)
+    assert client.get(endpoint).json()["state"] == "WAITING_BLUETOOTH"
+    sample = _telemetry(event_id)
+    sample["communication"] = None
+    sample["firmware_version"] = "direct-wifi-bme680-mq135"
+    assert client.post("/api/v1/telemetry", json=sample,
+                       headers={"X-SafeSense-Ingress": "bt-sensor-receiver"}).status_code == 202
+    ready = client.get(endpoint).json()
+    assert ready["state"] == "READY"
+    assert ready["request_id"] == requested["request_id"]
+    assert ready["latest_bt_event_id"] == event_id

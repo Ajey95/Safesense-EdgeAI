@@ -7,6 +7,24 @@
 
 SafeSense combines environmental sensing, Wi-Fi CSI activity context, deterministic safety fusion, persistent ESP32 delivery, a local FastAPI backend, and a Streamlit operations dashboard. The design is privacy-oriented and fail-closed: uncertain CSI is never treated as proof that a room is vacant, and environmental danger cannot be suppressed by the ML result.
 
+## Current final-review implementation
+
+The single-board ESP32 path sends physical BME680/MQ-135 readings, queue status,
+and measured CSI to the laptop over its bounded Wi-Fi AP visit or paired
+Bluetooth SPP. `/forecast?view=live` shows sensor and delivery receipts;
+`/forecast?view=csi` separates recorded replay from fresh ESP32 CSI and offers
+operator-labelled room capture. The dashboard also provides CSV exports for
+wireless sensor events, CSI packets/windows, NVS observations, and SQLite
+tables. The scenario forecast remains synthetic and separate from physical
+telemetry. See [the review click path](docs/final_review_demo_flow.md) for the
+routes and evidence limits.
+
+The WiVi32/PRoFENCH CSI recordings and the local CSI model checkpoint are not
+part of this source release. The dataset authors restrict access to academic
+research, so obtain the recordings from their source and run the documented
+training workflow before expecting the replay/count endpoint to work in a new
+checkout. The within-recording baseline is not validated live-room accuracy.
+
 ## Architecture
 
 ![SafeSense architecture](docs/architecture.svg)

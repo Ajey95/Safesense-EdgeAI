@@ -29,6 +29,11 @@ firmware/tests/test_csi_gas.exe
 .chart-data-*/
 .codex-build/
 data/live/
+data/exports/
+data/*.log
 data/hf_fetched_synthetic_v1/
 output/
 ml.zip
+implementation_only/
+implementation_only.zip
+csi_app_candidate/

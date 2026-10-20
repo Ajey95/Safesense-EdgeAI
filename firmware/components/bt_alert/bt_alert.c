@@ -8,14 +8,17 @@
 #include "esp_gap_bt_api.h"
 #include "esp_log.h"
 #include "esp_spp_api.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #define RECEIPT_BIT BIT0
 #define READY_BIT BIT1
 #define TEST_BIT BIT2
 static const char *TAG = "safesense_bt_alert";
 static EventGroupHandle_t events;
+static SemaphoreHandle_t write_lock;
 static uint32_t spp_handle;
 static bool writable;
 static char expected_id[64];
@@ -90,7 +93,8 @@ static void spp_callback(esp_spp_cb_event_t event, esp_spp_cb_param_t *param) {
 bool bt_alert_start(void) {
     if (events) return true;
     events = xEventGroupCreate();
-    if (!events) return false;
+    write_lock = xSemaphoreCreateMutex();
+    if (!events || !write_lock) return false;
     if (esp_bt_controller_mem_release(ESP_BT_MODE_BLE) != ESP_OK) return false;
     esp_bt_controller_config_t config = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     if (esp_bt_controller_init(&config) != ESP_OK ||
@@ -118,17 +122,25 @@ bool bt_alert_take_test_request(void) {
 }
 
 bool bt_alert_send_sample(const char *event_id, const char *payload, uint32_t receipt_wait_ms) {
-    if (!bt_alert_connected() || !writable || !event_id || !payload ||
-        strlen(event_id) >= sizeof(expected_id) || strlen(payload) > 768) return false;
-    char message[784];
-    const int size = snprintf(message, sizeof(message), "DATA|%s\n", payload);
-    if (size <= 0 || size >= sizeof(message)) return false;
+    if (!event_id || !payload || strlen(event_id) >= sizeof(expected_id) ||
+        !write_lock || xSemaphoreTake(write_lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    const size_t length = strlen(payload);
+    if (!bt_alert_connected() || !writable || length == 0 || length > 768 || payload[length - 1] != '}') {
+        xSemaphoreGive(write_lock);
+        return false;
+    }
+    char message[840];
+    const int size = snprintf(message, sizeof(message), "DATA|%.*s,\"transmitted_uptime_ms\":%llu}\n",
+                              (int)(length - 1), payload,
+                              (unsigned long long)(esp_timer_get_time() / 1000));
+    if (size <= 0 || size >= sizeof(message)) { xSemaphoreGive(write_lock); return false; }
     snprintf(expected_id, sizeof(expected_id), "%s", event_id);
     xEventGroupClearBits(events, RECEIPT_BIT);
     writable = false;
     if (esp_spp_write(spp_handle, size, (uint8_t *)message) != ESP_OK) {
         expected_id[0] = '\0';
         writable = true;
+        xSemaphoreGive(write_lock);
         return false;
     }
     const bool received = (xEventGroupWaitBits(events, RECEIPT_BIT, pdTRUE, pdFALSE,
@@ -136,27 +148,63 @@ bool bt_alert_send_sample(const char *event_id, const char *payload, uint32_t re
     expected_id[0] = '\0';
     ESP_LOGI(TAG, "Bluetooth sensor receipt event=%s state=%s", event_id,
              received ? "STORED" : "UNCONFIRMED");
+    xSemaphoreGive(write_lock);
     return received;
+}
+
+bool bt_alert_send_csi(const char *line, size_t length) {
+    if (!line || length == 0 || length > 240 || strncmp(line, "WISDOM_CSI,", 11) != 0 ||
+        !write_lock || xSemaphoreTake(write_lock, 0) != pdTRUE) return false;
+    if (!bt_alert_connected() || !writable) { xSemaphoreGive(write_lock); return false; }
+    char message[256];
+    const int size = snprintf(message, sizeof(message), "CSI|%.*s\n", (int)length, line);
+    if (size <= 0 || size >= sizeof(message)) { xSemaphoreGive(write_lock); return false; }
+    writable = false;
+    const bool sent = esp_spp_write(spp_handle, size, (uint8_t *)message) == ESP_OK;
+    if (!sent) writable = true;
+    xSemaphoreGive(write_lock);
+    return sent;
+}
+
+bool bt_alert_send_status(const char *json, size_t length) {
+    if (!json || length < 2 || length > 850 || json[0] != '{' ||
+        json[length - 1] != '}' || !write_lock ||
+        xSemaphoreTake(write_lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    if (!bt_alert_connected() || !writable) { xSemaphoreGive(write_lock); return false; }
+    char message[864];
+    const int size = snprintf(message, sizeof(message), "STATUS|%.*s\n", (int)length, json);
+    if (size <= 0 || size >= sizeof(message)) { xSemaphoreGive(write_lock); return false; }
+    writable = false;
+    const bool sent = esp_spp_write(spp_handle, size, (uint8_t *)message) == ESP_OK;
+    if (!sent) writable = true;
+    xSemaphoreGive(write_lock);
+    return sent;
 }
 
 bool bt_alert_send(const char *event_id, uint8_t room, uint8_t horizon_minutes,
                    uint8_t channel, bool simulated, uint32_t receipt_wait_ms) {
-    if (!bt_alert_connected() || !writable || !event_id || strlen(event_id) >= sizeof(expected_id)
-        || room >= 5 || channel >= 5 || horizon_minutes > 30) return false;
+    if (!event_id || strlen(event_id) >= sizeof(expected_id) || room >= 5 || channel >= 5 ||
+        horizon_minutes > 30 || !write_lock ||
+        xSemaphoreTake(write_lock, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    if (!bt_alert_connected() || !writable) { xSemaphoreGive(write_lock); return false; }
     for (const char *p = event_id; *p; ++p)
         if (!( (*p >= '0' && *p <= '9') || (*p >= 'A' && *p <= 'Z') ||
-               (*p >= 'a' && *p <= 'z') || *p == '-' || *p == '_' )) return false;
+               (*p >= 'a' && *p <= 'z') || *p == '-' || *p == '_' )) {
+            xSemaphoreGive(write_lock);
+            return false;
+        }
     char message[128];
     const int size = snprintf(message, sizeof(message), "ALERT|%s|%u|%u|%u|%c\n",
                               event_id, room, horizon_minutes, channel,
                               simulated ? 'S' : 'R');
-    if (size <= 0 || size >= sizeof(message)) return false;
+    if (size <= 0 || size >= sizeof(message)) { xSemaphoreGive(write_lock); return false; }
     snprintf(expected_id, sizeof(expected_id), "%s", event_id);
     xEventGroupClearBits(events, RECEIPT_BIT);
     writable = false;
     if (esp_spp_write(spp_handle, size, (uint8_t *)message) != ESP_OK) {
         expected_id[0] = '\0';
         writable = true;
+        xSemaphoreGive(write_lock);
         return false;
     }
     const bool received = (xEventGroupWaitBits(events, RECEIPT_BIT, pdTRUE, pdFALSE,
@@ -164,5 +212,6 @@ bool bt_alert_send(const char *event_id, uint8_t room, uint8_t horizon_minutes,
     expected_id[0] = '\0';
     ESP_LOGI(TAG, "Bluetooth laptop receipt event=%s state=%s", event_id,
              received ? "STORED" : "UNCONFIRMED");
+    xSemaphoreGive(write_lock);
     return received;
 }

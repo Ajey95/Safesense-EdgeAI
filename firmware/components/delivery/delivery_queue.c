@@ -85,3 +85,19 @@ int delivery_queue_ack_head(delivery_queue_t *queue, const char *event_id) {
     return 0;
 }
 uint8_t delivery_queue_count(const delivery_queue_t *queue) { return queue ? queue->count : 0; }
+
+int delivery_queue_list_ids(delivery_queue_t *queue,
+                            char ids[DELIVERY_QUEUE_CAPACITY][DELIVERY_EVENT_ID_MAX]) {
+    if (!queue || !ids || queue->count > DELIVERY_QUEUE_CAPACITY) return -1;
+    for (uint8_t offset = 0; offset < queue->count; ++offset) {
+        char key[8];
+        slot_key((queue->head + offset) % DELIVERY_QUEUE_CAPACITY, key);
+        delivery_record_t record = {0};
+        size_t length = sizeof(record);
+        if (nvs_get_blob(queue->handle, key, &record, &length) != ESP_OK ||
+            length != sizeof(record) || !memchr(record.event_id, '\0', sizeof(record.event_id)))
+            return -1;
+        memcpy(ids[offset], record.event_id, sizeof(record.event_id));
+    }
+    return queue->count;
+}

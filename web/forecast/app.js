@@ -1,7 +1,14 @@
 const $ = (id) => document.getElementById(id);
-const viewNames = ['overview','forecast','live','sensors','sites','alerts','reports','integrations','settings'];
+const viewNames = ['overview','forecast','live','csi','sensors','sites','alerts','reports','integrations','settings'];
 const requestedView = new URLSearchParams(location.search).get('view');
-const state = {scenarios: [], scenario: 'freezer_rebound', minute: 82, seed: 17, reveal: false, fault: false, data: null, timer: null, hardware: null, chartManual:false, view:viewNames.includes(requestedView)?requestedView:'forecast'};
+const scenarioMinutes = {freezer_rebound:86,lab_two_stage:95,cold_load:80,bakery_restart:82};
+const scenarioStorageKey = 'safesense.forecast.scenario';
+function savedScenario() {
+  try { return localStorage.getItem(scenarioStorageKey) || 'freezer_rebound'; }
+  catch { return 'freezer_rebound'; }
+}
+const initialScenario = savedScenario();
+const state = {scenarios: [], scenario: initialScenario, minute: scenarioMinutes[initialScenario] ?? 82, seed: 17, reveal: false, fault: false, data: null, timer: null, hardware: null, chartManual:false, view:viewNames.includes(requestedView)?requestedView:'forecast'};
 const labels = {temperature_c:'Temperature',humidity_pct:'Humidity',pressure_pa:'Pressure',gas_resistance_ohm:'BME680 gas resistance',mq135_adc_raw:'MQ-135 raw ADC'};
 const units = {temperature_c:'°C',humidity_pct:'%',pressure_pa:'Pa',gas_resistance_ohm:'Ω',mq135_adc_raw:'raw'};
 const roomThemes = {
@@ -18,6 +25,16 @@ const currentBreach = (d) => Object.entries(d.limits).find(([channel,[low,high]]
   const reading = value(d.current,channel);
   return reading < low || reading > high;
 })?.[0] || null;
+const firstPathBreach = (d, path) => {
+  for (let i = 0; i < d.forecast_horizons.length; i++) {
+    for (const [channel, [low, high]] of Object.entries(d.limits)) {
+      const reading = path[i][d.channels.indexOf(channel)];
+      if (reading < low || reading > high) return {channel, minute:d.forecast_horizons[i], direction:reading < low ? 'below' : 'above'};
+    }
+  }
+  return null;
+};
+const crossingText = (crossing) => crossing ? `${labels[crossing.channel]} ${crossing.direction ? crossing.direction + ' range at ' : 'crosses range at '}+${crossing.minute} min` : 'No early alert';
 const revealedOutcome = (d) => {
   if (!d.truth_revealed) return null;
   const actual = Boolean(currentBreach(d) || d.actual_breach);
@@ -32,6 +49,10 @@ async function loadScenarios() {
   const response = await fetch('/api/v1/forecast/scenarios');
   if (!response.ok) throw new Error('Scenario list unavailable');
   state.scenarios = (await response.json()).scenarios;
+  if (!state.scenarios.some(s => s.key === state.scenario)) {
+    state.scenario = 'freezer_rebound';
+    state.minute = scenarioMinutes[state.scenario];
+  }
   $('scenario-select').replaceChildren(...state.scenarios.map(s => {
     const option = document.createElement('option');
     option.value = s.key;
@@ -48,6 +69,7 @@ async function loadEpisode() {
   if (!response.ok) throw new Error((await response.json()).detail || 'Forecast unavailable');
   state.data = await response.json();
   state.hardware = null;
+  $('telegram-voice-status').textContent='Select a forecast with an early alert, then send its spoken guidance to the configured contact.';
   render();
 }
 
@@ -171,7 +193,7 @@ function renderChart(){
 function timelineItem(icon,kind,time,title,sub){const item=document.createElement('div');item.className='timeline-item';const image=document.createElement('span');image.className=`timeline-icon ${kind}`;image.innerHTML=`<svg><use href="#${icon}"/></svg>`;const timeEl=document.createElement('span');timeEl.className='timeline-time';timeEl.textContent=time;const copy=document.createElement('span');copy.className='timeline-copy';const strong=document.createElement('b');strong.textContent=title;const detail=document.createElement('span');detail.textContent=sub;copy.append(strong,detail);item.append(image,timeEl,copy);return item;}
 function renderTimeline(){
   const d=state.data, alert=Boolean(d.breach), fault=state.fault, list=$('timeline');list.replaceChildren();
-  if(state.hardware){const h=state.hardware;list.append(timelineItem('i-sensor',h.tx_persisted?'success':'warning','TX',h.tx_persisted?'Event persisted on TX':'TX persistence failed','Reported by the connected ESP32 TX.'),timelineItem('i-wifi',h.rx_ack?'success':'warning','Wi-Fi',h.rx_ack?'Exact-ID RX ACK received':'No exact-ID RX ACK','RX storage is separate from backend storage.'),timelineItem('i-bt',h.bt_ack?'success':'muted','Bluetooth',h.bt_ack?'Nearby laptop stored receipt':'Bluetooth receipt unconfirmed','Reported by TX after the receiver ACK.'));$('voice-button').disabled=!alert;return;}
+  if(state.hardware){const h=state.hardware;list.append(timelineItem('i-sensor',h.tx_persisted?'success':'warning','TX',h.tx_persisted?'Event persisted on TX':'TX persistence failed','Reported by the connected ESP32 TX.'),timelineItem('i-wifi',h.rx_ack?'success':'warning','Wi-Fi',h.rx_ack?'Exact-ID RX ACK received':'No exact-ID RX ACK','RX storage is separate from backend storage.'),timelineItem('i-bt',h.bt_ack?'success':'muted','Bluetooth',h.bt_ack?'Nearby laptop stored receipt':'Bluetooth receipt unconfirmed','Reported by TX after the receiver ACK.'));$('voice-button').disabled=!alert;$('telegram-voice-button').disabled=!alert;return;}
   if(!alert){
     list.append(timelineItem('i-sensor','muted',`Minute ${d.minute}`,'Monitoring sensor trend','No forecast range crossing in the next 30 minutes.'),timelineItem('i-wifi','muted','Primary path','Wi-Fi to laptop on standby','No alert packet generated at this minute.'),timelineItem('i-bt','muted','Alternate','Bluetooth on standby','Fallback used only after a simulated Wi-Fi timeout.'));
   } else {
@@ -183,6 +205,7 @@ function renderTimeline(){
   if(revealedOutcome(d)==='correct-no-alert')list.append(timelineItem('i-check','success','Reveal','No-breach control confirmed','Model and simulator stayed within range.'));
   if(revealedOutcome(d)==='missed-breach')list.append(timelineItem('i-alert','warning','Reveal','Missed breach in synthetic episode','Simulator crossed a demo range without a model alert.'));
   $('voice-button').disabled=!alert;
+  $('telegram-voice-button').disabled=!alert;
 }
 function renderStatus(){
   const d=state.data,alert=Boolean(d.breach),fault=state.fault,b=$('status-banner');
@@ -237,8 +260,13 @@ function workspaceMarkup(view) {
   if(view==='alerts')return `<div class="workspace-intro ${d.breach?'workspace-warning':''}"><strong>${d.breach?'Forecast alert · '+warning:'No forecast alert at this minute'}</strong><p>${d.breach?escapeHtml(d.scenario.response):'The model predicts no crossing of the configured demo ranges at its six forecast points.'}</p><span>${d.breach?`Event ${escapeHtml(d.event_id)} · ${state.fault?'Bluetooth-to-laptop receipt simulated':'Wi-Fi-to-laptop receipt simulated'}`:'No alert event or receipt has been generated.'}</span></div><div class="workspace-card workspace-table-wrap"><h2>Alert criteria for ${room}</h2><p>Temperature, humidity, and BME680 gas resistance are checked at +5, +10, +15, +20, +25, and +30 minutes. The earliest crossing starts one alert event.</p><table class="workspace-table"><thead><tr><th>Channel</th><th>Current</th><th>Forecast +30 min</th><th>Demo range</th><th>Policy result</th></tr></thead><tbody>${policyRows()}</tbody></table></div><div class="workspace-two"><article class="workspace-card"><h2>Pressure and MQ-135</h2><p>Both channels are model inputs and outputs. Pressure has no room hazard bound in this demo; MQ-135 is raw ADC and has no calibrated ppm limit.</p></article><article class="workspace-card"><h2>Delivery evidence</h2><p>${state.hardware?'TX hardware result available in Alert Details.':state.fault?'Bluetooth receiver receipt is simulated for this episode.':'Laptop Wi-Fi receipt is simulated for this episode.'} Backend storage and actual voice playback are not inferred from these labels.</p><button class="workspace-button" data-go="integrations">Inspect delivery paths</button></article></div>`;
   if(view==='reports'){
     const origin=d.observed.at(-11), observed=d.actual_future?.at(-1);
+    const trendPath=d.forecast_horizons.map(h=>d.current.map((reading,i)=>reading+(h/10)*(reading-origin[i])));
+    const trendHit=firstPathBreach(d,trendPath);
+    const modelHit=firstPathBreach(d,d.forecast);
+    const thresholdHit=currentBreach(d);
+    const outcome=d.truth_revealed?(d.actual_breach?`${labels[d.actual_breach.channel]} crosses range at +${d.actual_breach.at_minute} min`:'No range crossing in the next 30 min'):'Hidden until reveal';
     const rows=d.channels.map(channel=>{const i=idx(channel),trend=d.current[i]+3*(d.current[i]-origin[i]);const forecast=d.forecast.at(-1)[i];return `<tr><th scope="row">${escapeHtml(labels[channel])}</th><td>${escapeHtml(reading(channel,forecast))}</td><td>${escapeHtml(reading(channel,trend))}</td><td>${observed?escapeHtml(reading(channel,observed[i])):'Hidden'}</td><td>${observed?escapeHtml(reading(channel,Math.abs(forecast-observed[i]))):'—'}</td></tr>`;}).join('');
-    return `<div class="workspace-intro"><strong>Forecast versus a recent-trend baseline</strong><p>The trend baseline extends the last ten-minute change to +30 minutes. The TinyML model uses 60 minutes and all five channels. Future values are hidden until revealed.</p><span>Held-out family: ${title} · episode seed ${d.seed}</span></div><div class="workspace-card workspace-table-wrap"><h2>+30-minute comparison</h2><table class="workspace-table"><thead><tr><th>Channel</th><th>TinyML forecast</th><th>Recent trend</th><th>Simulator future</th><th>Model absolute error</th></tr></thead><tbody>${rows}</tbody></table><button class="workspace-button" data-action="reveal">${d.truth_revealed?'Hide simulator future':'Reveal simulator future'}</button></div><div class="workspace-two"><article class="workspace-card"><h2>Model structure</h2><p>70 inputs → 48 → 24 → 30 outputs. Six future points at five-minute spacing are produced on the TX firmware and in this dashboard.</p></article><article class="workspace-card"><h2>Evidence boundary</h2><p>These comparisons use generated scenarios. They do not establish real-room forecast accuracy, physical hazard detection, or calibrated gas concentration.</p></article></div>`;
+    return `<div class="workspace-intro"><strong>Forecast versus simple rules</strong><p>Current threshold checks this minute. The trend rule extends the last ten-minute change. TinyML uses 60 minutes and all five channels. All three use the same demo ranges.</p><span>Held-out family: ${title} · episode seed ${d.seed} · minute ${d.minute}</span></div><div class="workspace-card workspace-table-wrap"><h2>Early-alert decisions</h2><table class="workspace-table"><thead><tr><th>Method</th><th>Decision</th></tr></thead><tbody><tr><th scope="row">Current threshold</th><td>${thresholdHit?`${escapeHtml(labels[thresholdHit])} outside range now`:'No alarm at current reading'}</td></tr><tr><th scope="row">Ten-minute trend</th><td>${escapeHtml(crossingText(trendHit))}</td></tr><tr><th scope="row">TinyML forecast</th><td>${escapeHtml(crossingText(modelHit))}</td></tr><tr><th scope="row">Simulator outcome</th><td>${escapeHtml(outcome)}</td></tr></tbody></table><button class="workspace-button" data-action="reveal">${d.truth_revealed?'Hide simulator future':'Reveal simulator future'}</button></div><div class="workspace-card workspace-table-wrap"><h2>+30-minute channel values</h2><table class="workspace-table"><thead><tr><th>Channel</th><th>TinyML forecast</th><th>Recent trend</th><th>Simulator future</th><th>Model absolute error</th></tr></thead><tbody>${rows}</tbody></table></div><div class="workspace-two"><article class="workspace-card"><h2>Model structure</h2><p>70 inputs → 48 → 24 → 30 outputs. Six future points at five-minute spacing are produced on the TX firmware and in this dashboard.</p></article><article class="workspace-card"><h2>Evidence boundary</h2><p>This selected episode illustrates one outcome from generated data. A different rule may perform differently. It does not establish real-room forecast accuracy or calibrated gas detection.</p></article></div>`;
   }
   if(view==='integrations'){
     const h=state.hardware;
@@ -249,7 +277,24 @@ function workspaceMarkup(view) {
   if(view==='settings')return `<div class="workspace-intro"><strong>Simulation controls</strong><p>These controls affect only the generated episode and dashboard display. They do not configure real emergency dispatch or a deployed sensor.</p></div><div class="workspace-card settings-card"><label>Episode seed <input id="setting-seed" type="number" min="1" max="999" value="${d.seed}"></label><label>Simulation minute <input id="setting-minute" type="range" min="60" max="110" value="${d.minute}"><output id="setting-minute-value">${d.minute}</output></label><label class="workspace-check"><input id="setting-fault" type="checkbox" ${state.fault?'checked':''}> Inject Wi-Fi-to-laptop timeout</label><label class="workspace-check"><input id="setting-reveal" type="checkbox" ${state.reveal?'checked':''}> Reveal hidden simulator future</label><button class="workspace-button" data-action="apply-settings">Apply settings</button><p id="setting-error" class="setting-error" role="status"></p></div><div class="workspace-two"><article class="workspace-card"><h2>Selected scenario</h2><p>${room} · ${title}</p><button class="workspace-button" data-go="sites">Change room</button></article><article class="workspace-card"><h2>Alert policy</h2><p>Forecast limits are fixed for each room in this synthetic demo. Temperature, humidity, and BME680 gas resistance can trigger alerts; pressure and MQ-135 raw ADC remain context signals.</p></article></div>`;
   return '';
 }
-const workspaceTitles = {overview:['Overview','Current episode at a glance'],live:['Live Hardware','Physical sensor readings and delivery receipts'],sensors:['Sensors','Five inputs, five forecast outputs'],sites:['Sites','Choose a room and held-out scenario'],alerts:['Alerts','Forecast limits and delivery state'],reports:['Reports','Model output and baseline comparison'],integrations:['Integrations','Wi-Fi, Bluetooth, and receipt boundaries'],settings:['Settings','Synthetic episode controls']};
+const workspaceTitles = {overview:['Overview','Current episode at a glance'],live:['Live Hardware','Physical sensor readings and delivery receipts'],csi:['Wi-Fi CSI Count','Recorded replay and live CSI people counting'],sensors:['Sensors','Five inputs, five forecast outputs'],sites:['Sites','Choose a room and held-out scenario'],alerts:['Alerts','Forecast limits and delivery state'],reports:['Reports','Model output and baseline comparison'],integrations:['Integrations','Wi-Fi, Bluetooth, and receipt boundaries'],settings:['Settings','Synthetic episode controls']};
+const overviewCopy = {
+  freezer_rebound: ['A cooling recovery can hide a rebound','The compressor briefly brings temperature down, but the room warms again. A safe reading now can hide a later cold-chain breach.','Forecast the renewed warming','SafeSense checks the longer sensor history for a future temperature crossing, then points the operator to compressor cycling and door traffic.'],
+  lab_two_stage: ['A lab process can change in stages','Mild warming comes first; a delayed BME680 gas-resistance change follows while simple current checks can still look normal. Gas resistance cannot identify a chemical.','Watch the delayed sensor response','SafeSense forecasts the combined sensor pattern and prompts the operator to pause the process and verify local ventilation if a demo range is predicted to cross.'],
+  class_afterhours: ['Cleaning can resemble an occupied-room change','After-hours cooling and a separate cleaning response overlap. A broad gas-sensor change alone cannot prove people are present or identify the cleaner.','Keep the signals and decisions separate','SafeSense forecasts the environmental channels, asks the operator to verify the cleaning task, and leaves occupancy to separately validated CSI evidence.'],
+  bakery_restart: ['Restart readings can look alarming without a breach','Heat, moisture, and a broad gas-sensor response overlap after cleaning. Those changes need checking, even when no configured range is forecast to cross.','Allow a justified no-alert decision','SafeSense evaluates the full history and future points. When no range crossing is predicted, it continues monitoring and prompts a restart-procedure check without generating a forecast alert.'],
+  server_airflow: ['A cooling dip can mask a slow rack-aisle rise','Recirculated air makes the aisle look cooler for a moment while the longer thermal pattern continues upward.','Look past the short cooling dip','SafeSense checks the prior hour and forecasts the aisle temperature. A predicted range crossing prompts an airflow and containment inspection.'],
+  cold_load: ['Several small door events can add up','A warm pallet and wet outside air repeatedly enter cold storage. Each individual door opening may look minor while temperature drifts toward a breach.','Forecast the combined loading effect','SafeSense combines the longer temperature and humidity pattern to warn of a future range crossing and directs a check of loading practice and product temperature.'],
+  lab_flush: ['A clean-air flush may hide a continuing source','Ventilation briefly improves the gas-sensor response, but accumulation resumes after the flush. The sensor still cannot identify a chemical.','Check for the rebound after ventilation','SafeSense uses the full observed history to forecast the later response and prompts a check of the process source and extraction when a range crossing is predicted.'],
+  bakery_cooling: ['Falling heat does not mean every risk is falling','The bakery cools at first while humidity and the broad gas-sensor response continue to change. A temperature-only rule can miss that overlap.','Forecast all relevant channels together','SafeSense checks temperature, humidity, and BME680 gas resistance at six future points, then directs the operator to inspect cooling and cleaning overlap if a range is predicted to cross.'],
+};
+function overviewCards(scenarioKey) {
+  const [problemTitle,problem,approachTitle,approach]=overviewCopy[scenarioKey]||['Risks can develop before a threshold alarm','A current reading may be in range while conditions change.','Forecast, verify, then act','SafeSense checks the recent sensor history and prompts the operator to verify any predicted crossing.'];
+  return `<div class="workspace-two review-problem"><article class="workspace-card"><small>PROBLEM STATEMENT</small><h2>${escapeHtml(problemTitle)}</h2><p>${escapeHtml(problem)}</p></article><article class="workspace-card"><small>SAFE SENSE APPROACH</small><h2>${escapeHtml(approachTitle)}</h2><p>${escapeHtml(approach)}</p></article></div>`;
+}
+function reportsExportCard() {
+  return `<section class="workspace-card evidence-exports" aria-label="All CSV exports"><small>DOWNLOAD STORED EVIDENCE</small><h2>All data exports</h2><p>These downloads contain records stored on this laptop. They are separate from the synthetic forecast comparison above. The database ZIP contains readable CSVs for each available SQLite table.</p><div class="evidence-export-links"><a download href="/api/v1/exports/room-windows.csv">Export collected CSI windows · CSV</a><a download href="/api/v1/exports/csi-packets.csv">Export detailed CSI packets · CSV</a><a download href="/api/v1/exports/nvs-queue.csv">Export ESP32 NVS queue · CSV</a><a download href="/api/v1/exports/wireless-sensors.csv">Export Wi-Fi/Bluetooth sensors · CSV</a><a download href="/api/v1/exports/sqlite-tables.zip">Export all databases · CSV ZIP</a></div></section>`;
+}
 function renderWorkspace(){
   if(state.view==='forecast')return;
   const config=workspaceTitles[state.view];
@@ -261,8 +306,20 @@ function renderWorkspace(){
     window.liveDashboard.render();
     return;
   }
+  if(state.view==='csi'){
+    text('workspace-context','CSI RESEARCH DEMO');
+    text('room-motto','CSI SAMPLES. EXPLICIT EVIDENCE.');
+    window.csiCountDashboard.render();
+    return;
+  }
   text('workspace-context',state.data?`${state.data.scenario.room.toUpperCase()} · SYNTHETIC`:'SYNTHETIC DEMO');
   $('workspace-body').innerHTML=state.data?workspaceMarkup(state.view):'<div class="workspace-card">Loading synthetic episode…</div>';
+  if(state.view==='reports'&&state.data)$('workspace-body').firstElementChild.insertAdjacentHTML('afterend',reportsExportCard());
+  if(state.view==='overview'&&state.data)$('workspace-body').insertAdjacentHTML('afterbegin',overviewCards(state.data.scenario.key));
+  if(state.view==='alerts'&&state.data?.breach){
+    $('workspace-body').insertAdjacentHTML('beforeend','<section class="workspace-card integration-control alert-voice-action"><h2>Send spoken early alert</h2><p>The Telegram voice note explains the forecast lead time and the room-specific action. Only the configured owner account receives this scenario message.</p><button type="button" class="workspace-button" id="workspace-telegram-voice">Send forecast voice to Telegram</button><p id="workspace-telegram-status" role="status">Ready to send the selected forecast.</p></section>');
+    $('workspace-telegram-voice').addEventListener('click',()=>sendTelegramVoice($('workspace-telegram-voice'),$('workspace-telegram-status')));
+  }
   const minute=$('setting-minute');if(minute)minute.addEventListener('input',()=>text('setting-minute-value',minute.value));
 }
 function setView(view,push=true){
@@ -273,6 +330,10 @@ function setView(view,push=true){
     text('room-motto',roomThemes[state.data?.scenario.room||'Cold storage'].motto);
     text('brand-tagline',roomThemes[state.data?.scenario.room||'Cold storage'].brand);
   }
+  if(state.view==='csi'&&selected!=='csi'){
+    window.csiCountDashboard.stop();
+    text('room-motto',roomThemes[state.data?.scenario.room||'Cold storage'].motto);
+  }
   if(selected!=='forecast')stop();
   state.view=selected;
   document.body.dataset.view=selected;
@@ -281,17 +342,38 @@ function setView(view,push=true){
   document.querySelectorAll('.sidebar nav a[data-view]').forEach(link=>{const active=link.dataset.view===selected;link.classList.toggle('selected',active);if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
   document.title=`${selected==='forecast'?'Scenario Forecast':workspaceTitles[selected][0]} · SafeSense`;
   if(push)history.pushState({view:selected},'',selected==='forecast'?'/forecast':`/forecast?view=${selected}`);
-  renderWorkspace();if(selected==='live')window.liveDashboard.start();window.scrollTo(0,0);
+  renderWorkspace();if(selected==='live')window.liveDashboard.start();if(selected==='csi')window.csiCountDashboard.start();window.scrollTo(0,0);
 }
-function speak(){const d=state.data;if(!d?.breach)return;if(!('speechSynthesis' in window)){alert('Speech synthesis is unavailable in this browser.');return;}speechSynthesis.cancel();const message=`SafeSense synthetic demonstration alert. ${d.scenario.room}. ${labels[d.breach.channel]} may cross the configured demo range in about ${d.breach.at_minute} minutes. ${d.scenario.response}`;speechSynthesis.speak(new SpeechSynthesisUtterance(message));}
+function speak(){const d=state.data;if(!d?.breach)return;if(!('speechSynthesis' in window)){alert('Speech synthesis is unavailable in this browser.');return;}speechSynthesis.cancel();const message=`SafeSense early forecast for ${d.scenario.room}. ${labels[d.breach.channel]} may move ${d.breach.direction} the configured range in about ${d.breach.at_minute} minutes. Please verify the current sensor reading and inspect the area. ${d.scenario.response}`;speechSynthesis.speak(new SpeechSynthesisUtterance(message));}
+async function sendTelegramVoice(button,output){
+  const d=state.data;
+  if(!d?.breach)return;
+  button.disabled=true;
+  output.textContent='Generating spoken guidance and submitting it to Telegram…';
+  try{
+    const response=await fetch('/api/v1/forecast/voice-scenario',{method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({scenario:d.scenario.key,minute:d.minute,seed:d.seed})});
+    const result=await response.json();
+    if(!response.ok)throw new Error(result.detail||`HTTP ${response.status}`);
+    output.textContent=result.messages_sent>0?`Telegram accepted ${result.messages_sent} voice message for the configured contact. Event ${result.voice_event_id}.`:result.state==='DEFERRED_OFFLINE'?'Telegram is offline; voice was not sent.':`Voice outcome: ${result.state}. Check delivery status before retrying.`;
+  }catch(error){output.textContent=`Telegram voice could not be sent: ${String(error.message||error)}`;}
+  finally{button.disabled=false;}
+}
 function stop(){if(state.timer){clearInterval(state.timer);state.timer=null;}$('run-button').querySelector('span').textContent='Run Simulation';}
+function chooseScenario(scenario) {
+  stop();
+  state.scenario = scenario;
+  state.minute = scenarioMinutes[scenario] ?? 82;
+  state.chartManual = false;
+  try { localStorage.setItem(scenarioStorageKey, scenario); } catch { /* Browser storage is optional. */ }
+}
 
-$('scenario-select').addEventListener('change',async e=>{stop();state.scenario=e.target.value;state.minute=82;state.chartManual=false;await loadEpisode();});
+$('scenario-select').addEventListener('change',async e=>{chooseScenario(e.target.value);await loadEpisode();});
 $('location-button').addEventListener('click',()=>setView('sites'));
 $('wifi-fault').addEventListener('change',e=>{state.fault=e.target.checked;state.hardware=null;render();});
 $('reveal-truth').addEventListener('change',async e=>{state.reveal=e.target.checked;await loadEpisode();});
 $('chart-channel').addEventListener('change',()=>{state.chartManual=true;renderChart();});
 $('voice-button').addEventListener('click',speak);
+$('telegram-voice-button').addEventListener('click',()=>sendTelegramVoice($('telegram-voice-button'),$('telegram-voice-status')));
 $('run-button').addEventListener('click',async()=>{if(state.timer){stop();return;}state.minute=60;await loadEpisode();$('run-button').querySelector('span').textContent='Pause Simulation';state.timer=setInterval(async()=>{if(state.minute>=110){stop();return;}state.minute++;try{await loadEpisode();}catch(error){stop();showError(error);}},450);});
 $('scenario-search').addEventListener('input',e=>{const term=e.target.value.trim().toLowerCase();for(const option of $('scenario-select').options)option.hidden=Boolean(term&&!option.textContent.toLowerCase().includes(term));});
 $('scenario-search').addEventListener('keydown',e=>{if(e.key==='Enter'){const option=[...$('scenario-select').options].find(o=>!o.hidden);if(option){$('scenario-select').value=option.value;$('scenario-select').dispatchEvent(new Event('change'));setView('forecast');e.target.blur();}}});
@@ -299,10 +381,14 @@ $('details-button').addEventListener('click',()=>$('details-dialog').showModal()
 $('close-details').addEventListener('click',()=>$('details-dialog').close());
 $('replay-button').addEventListener('click',async()=>{const button=$('replay-button'),port=$('tx-port').value.trim().toUpperCase();if(!/^COM[0-9]{1,3}$/.test(port)){text('replay-result','Enter a local COM port such as COM11.');return;}button.disabled=true;text('replay-result','Sending synthetic history to TX and waiting for route receipts…');try{const response=await fetch('/api/v1/forecast/replay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scenario:state.scenario,minute:state.minute,seed:state.seed,wifi_fault:state.fault,port})});const result=await response.json();if(!response.ok)throw new Error(result.detail||'TX replay failed');state.hardware=result.receipt;text('replay-result',`TX result received for ${state.hardware.event_id}.`);render();}catch(error){text('replay-result',String(error.message||error));}finally{button.disabled=false;}});
 document.querySelectorAll('[data-view]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();setView(link.dataset.view);}));
+document.querySelector('.review-flow').addEventListener('click',event=>{
+  const step=event.target.closest('[data-go]');
+  if(step)setView(step.dataset.go);
+});
 window.addEventListener('popstate',()=>{const view=new URLSearchParams(location.search).get('view');setView(viewNames.includes(view)?view:'forecast',false);});
 $('workspace-body').addEventListener('click',async event=>{
   const go=event.target.closest('[data-go]');if(go){setView(go.dataset.go);return;}
-  const scenario=event.target.closest('[data-scenario]');if(scenario){state.scenario=scenario.dataset.scenario;state.minute=82;state.chartManual=false;$('scenario-select').value=state.scenario;await loadEpisode();setView('forecast');return;}
+  const scenario=event.target.closest('[data-scenario]');if(scenario){chooseScenario(scenario.dataset.scenario);$('scenario-select').value=state.scenario;await loadEpisode();setView('forecast');return;}
   const action=event.target.closest('[data-action]')?.dataset.action;
   if(action==='reveal'){state.reveal=!state.reveal;$('reveal-truth').checked=state.reveal;await loadEpisode();return;}
   if(action==='hardware'){$('details-dialog').showModal();return;}

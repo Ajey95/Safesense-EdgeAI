@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Scenario Forecast · SafeSense</title>
-  <link rel="stylesheet" href="/forecast-assets/style.css?v=scenario-route-20261006">
+  <link rel="stylesheet" href="/forecast-assets/style.css?v=csv-exports-20261021">
 </head>
 <body data-room="Cold storage">
   <svg class="svg-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -46,6 +46,7 @@
       <a href="/forecast?view=overview" data-view="overview"><svg><use href="#i-home"/></svg>Overview</a>
       <a class="selected" href="/forecast?view=forecast" data-view="forecast" aria-current="page"><svg><use href="#i-trend"/></svg>Scenario Forecast</a>
       <a href="/forecast?view=live" data-view="live"><svg><use href="#i-wifi"/></svg>Live Hardware</a>
+      <a href="/forecast?view=csi" data-view="csi"><svg><use href="#i-wifi"/></svg>Wi-Fi CSI Count</a>
       <a href="/forecast?view=sensors" data-view="sensors"><svg><use href="#i-sensor"/></svg>Sensors</a>
       <a href="/forecast?view=sites" data-view="sites"><svg><use href="#i-pin"/></svg>Sites</a>
       <a href="/forecast?view=alerts" data-view="alerts"><svg><use href="#i-alert"/></svg>Alerts <span id="alert-count" class="nav-count">0</span></a>
@@ -58,13 +59,14 @@
 
   <main id="top" class="content">
     <div id="room-motto" class="motto">KEEP IT COLD. KEEP PEOPLE SAFE.</div>
+    <nav class="review-flow" aria-label="Presentation flow"><span>LIVE REVIEW FLOW</span><button type="button" data-go="overview">1 · Problem</button><button type="button" data-go="live">2 · BME680 & delivery</button><button type="button" data-go="csi">3 · Wi-Fi CSI</button><button type="button" data-go="forecast">4 · Early forecast</button><button type="button" data-go="alerts">5 · Alert action</button></nav>
     <div id="forecast-view">
     <div class="page-heading">
       <div><h1>Scenario Forecast</h1><p>Simulate. Anticipate. Take Action.</p></div>
       <div id="controls" class="heading-controls"><label class="scenario-control" for="scenario-select"><span>Select Scenario</span><span class="select-wrap"><svg><use id="room-select-icon" href="#i-snow"/></svg><select id="scenario-select" aria-label="Select scenario"></select><svg class="chevron"><use href="#i-chevron"/></svg></span></label><button id="run-button" class="run-button" type="button"><svg><use href="#i-play"/></svg><span>Run Simulation</span></button></div>
     </div>
 
-    <section class="scenario-strip" aria-label="Simulation context"><span class="simulation-badge">SIMULATION</span><div class="strip-copy"><strong id="scenario-title">Loading scenario...</strong><span id="scenario-story">Controlled synthetic sensor episode.</span></div><div class="strip-meta"><span id="scenario-clock">Minute 82 of 151</span><span>Forecast horizon: 30 minutes</span></div></section>
+    <section class="scenario-strip" aria-label="Simulation context"><span class="simulation-badge">SIMULATION</span><div class="strip-copy"><strong id="scenario-title">Loading scenario...</strong><span id="scenario-story">Controlled synthetic sensor episode.</span></div><div class="strip-meta"><span id="scenario-clock">Loading minute...</span><span>Forecast horizon: 30 minutes</span></div></section>
 
     <div class="summary-grid">
       <section id="current-conditions" class="panel current-panel"><div class="panel-head"><h2>Current Conditions</h2><span>(Synthetic sensor feed)</span></div><div class="hero-reading"><div class="reading-icon"><svg><use href="#i-thermo"/></svg></div><strong id="current-temp">—</strong><span id="current-state" class="state-pill">LOADING</span></div><div class="metric-rows"><div><span>Room range</span><strong id="current-range">—</strong></div><div><span>Humidity</span><strong id="current-humidity">—</strong></div><div><span>Pressure</span><strong id="current-pressure">—</strong></div><div><span>BME680 gas</span><strong id="current-gas">—</strong></div><div><span>MQ-135</span><strong id="current-mq">—</strong></div></div></section>
@@ -73,7 +75,7 @@
     </div>
 
     <div class="detail-grid"><section id="forecast-chart" class="panel chart-panel"><div class="section-head"><h2 id="chart-heading">Temperature Forecast <span>(Next 30 Minutes)</span></h2><div class="chart-legend"><span><i class="blue-line"></i> TinyML forecast</span><span><i class="red-line"></i> <span id="limit-legend">Demo upper limit</span></span><span><i class="gray-line"></i> Current value</span></div></div><div id="chart" class="chart" role="img" aria-label="Temperature forecast graph"></div><div class="chart-tools"><label for="chart-channel">Trace</label><select id="chart-channel"><option value="temperature_c">Temperature</option><option value="humidity_pct">Humidity</option><option value="pressure_pa">Pressure</option><option value="gas_resistance_ohm">BME680 gas resistance</option><option value="mq135_adc_raw">MQ-135 raw ADC</option></select><label class="reveal-control"><input id="reveal-truth" type="checkbox">Reveal simulator future</label><span id="truth-result"></span></div></section>
-    <section id="alert-response" class="panel response-panel"><div class="section-head"><h2>Alert &amp; Response</h2></div><div id="timeline" class="timeline"></div><button id="voice-button" type="button" class="voice-button" disabled>▶ Play demo voice alert</button></section></div>
+    <section id="alert-response" class="panel response-panel"><div class="section-head"><h2>Alert &amp; Response</h2></div><div id="timeline" class="timeline"></div><button id="voice-button" type="button" class="voice-button" disabled>▶ Play forecast voice</button><button id="telegram-voice-button" type="button" class="voice-button telegram-voice-button" disabled>Send forecast voice to Telegram</button><p id="telegram-voice-status" class="telegram-voice-status" role="status">Select a forecast with an early alert, then send its spoken guidance to the configured contact.</p></section></div>
 
     <section id="status-banner" class="status-banner"><span class="status-circle"><svg><use href="#i-check"/></svg></span><div><strong id="status-title">Preparing forecast</strong><p id="status-copy">The selected episode is synthetic.</p></div><button id="details-button" type="button">View Alert Details <span>→</span></button></section>
     <p class="provenance">Synthetic demonstration · BME680 and MQ-135 channels are modeled signals · MQ-135 is raw ADC, not gas concentration · Simulated acknowledgments are not hardware delivery proof</p>
@@ -84,7 +86,8 @@
     </section>
   </main>
   <dialog id="details-dialog"><button id="close-details" class="dialog-close" type="button" aria-label="Close">×</button><h2>Forecast alert details</h2><div id="details-body"></div><div class="hardware-replay"><h3>Legacy two-board TX replay</h3><p>This optional replay uses the older TX → RX ESP32 Wi-Fi firmware and a laptop Bluetooth receiver. It is separate from the direct-to-laptop route monitored in Live Hardware; this scenario's route graphic remains simulated.</p><label for="tx-port">TX USB port</label><input id="tx-port" value="COM11" pattern="COM[0-9]{1,3}" aria-label="TX USB port"><button id="replay-button" type="button">Replay on TX</button><p id="replay-result" role="status">Requires the older TX/RX setup and a paired laptop Bluetooth receiver.</p></div></dialog>
-  <script src="/forecast-assets/live.js?v=bluetooth-samples-20261006b" defer></script>
-  <script src="/forecast-assets/app.js?v=scenario-route-20261006" defer></script>
+  <script src="/forecast-assets/live.js?v=page-exports-20261021" defer></script>
+  <script src="/forecast-assets/csi.js?v=page-exports-20261021" defer></script>
+  <script src="/forecast-assets/app.js?v=scenario-overview-20261021" defer></script>
 </body>
 </html>

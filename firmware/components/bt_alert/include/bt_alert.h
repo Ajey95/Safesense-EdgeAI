@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 /* Classic ESP32 Bluetooth SPP server for a paired nearby laptop COM port.
@@ -12,5 +13,8 @@ bool bt_alert_connected(void);
 bool bt_alert_take_test_request(void);
 /* Send one complete TX sensor JSON event and require an exact-ID laptop ACK. */
 bool bt_alert_send_sample(const char *event_id, const char *payload, uint32_t receipt_wait_ms);
+/* Best-effort measured CSI frame; sensor ACK traffic has priority. */
+bool bt_alert_send_csi(const char *line, size_t length);
+bool bt_alert_send_status(const char *json, size_t length);
 bool bt_alert_send(const char *event_id, uint8_t room, uint8_t horizon_minutes,
                    uint8_t channel, bool simulated, uint32_t receipt_wait_ms);

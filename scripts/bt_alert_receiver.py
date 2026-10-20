@@ -20,11 +20,49 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from scripts.direct_laptop_receiver import Receiver
+from scripts.transport_handoff import REQUEST, read_record, record_frame
+from scripts.wireless_csi_receiver import WirelessCsiForwarder
+from scripts.wifi_demo_session import RESTORE, current_ssid
 
 
 ROOMS = ("cold storage", "laboratory", "classroom", "bakery", "server room")
 CHANNELS = ("temperature", "humidity", "pressure", "BME680 gas response", "MQ-135 raw response")
 EVENT_ID = re.compile(r"^[A-Za-z0-9_-]{8,63}$")
+IDLE_RECONNECT_SECONDS = 30
+LOCK = Path("data/live/bt_alert_receiver.lock")
+
+
+def acquire_receiver_lock():
+    """Keep a button-triggered replacement from competing for the same COM port."""
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    handle = LOCK.open("a+b")
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            if LOCK.stat().st_size == 0:
+                handle.write(b"\0")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, IOError):
+        handle.close()
+        return None
+    return handle
+
+
+def idle_reconnect_due(last_frame_at: float, now: float, ssid: str | None) -> bool:
+    return ssid == RESTORE and now - last_frame_at >= IDLE_RECONNECT_SECONDS
+
+
+def network_for_idle_check() -> str | None:
+    try:
+        return current_ssid()
+    except (OSError, subprocess.TimeoutExpired):
+        # A stuck netsh call must not terminate the SPP listener.
+        return RESTORE
 
 
 def parse_alert(line: bytes) -> dict:
@@ -169,18 +207,31 @@ def main() -> None:
     parser.add_argument("--api", default="http://127.0.0.1:8000",
                         help="Local dashboard API used to sync durable laptop receipts")
     parser.add_argument("--no-voice", action="store_true")
+    parser.add_argument("--sos-voice", action="store_true",
+                        help="Opt in to Telegram voice messages for real alerts only")
+    parser.add_argument("--sos-database", type=Path, default=Path("data/live/sos_voice.db"))
     parser.add_argument("--send-test", action="store_true",
                         help="Request one labelled ESP32 transport test alert after SPP connects")
     args = parser.parse_args()
+    if args.sos_voice:
+        from scripts.sos_voice import VoiceConfig
+        VoiceConfig.from_environment()
     try:
         import serial
     except ImportError as error:
         raise SystemExit("Install the demo extra: pip install -e '.[demo]'") from error
+    receiver_lock = acquire_receiver_lock()
+    if receiver_lock is None:
+        print("Bluetooth receiver already running; leaving COM port to existing listener", flush=True)
+        return
     seen = stored_ids(args.journal)
     reported: set[str] = set()
     samples = Receiver(Path("data/live/direct_bt.db"), args.api,
-                       ingress="bt-sensor-receiver")
+                       ingress="bt-sensor-receiver", sos_voice=args.sos_voice,
+                       sos_database=args.sos_database)
+    csi = WirelessCsiForwarder(args.api, "ESP32_BLUETOOTH")
     test_sent = False
+    last_request_id = read_record(REQUEST).get("request_id")
     while True:
         try:
             with serial.Serial(args.port, baudrate=115200, timeout=1, write_timeout=2) as connection:
@@ -192,14 +243,46 @@ def main() -> None:
                     test_sent = True
                     print("Requested one labelled ESP32 Bluetooth transport test", flush=True)
                 next_sync = 0.0
+                last_frame_at = time.monotonic()
                 while True:
+                    requested_id = read_record(REQUEST).get("request_id")
+                    if requested_id and requested_id != last_request_id and network_for_idle_check() == RESTORE:
+                        last_request_id = requested_id
+                        raise serial.SerialException("Dashboard requested Bluetooth COM reconnect")
                     if time.monotonic() >= next_sync:
                         sync_journal(args.journal, args.api, reported)
                         samples.sync_once()
+                        samples.sync_status_once()
+                        try:
+                            samples.dispatch_sos_once()
+                        except (OSError, ValueError, sqlite3.Error) as error:
+                            print(f"SOS voice worker deferred: {type(error).__name__}", flush=True)
                         report_listener_heartbeat(args.api)
                         next_sync = time.monotonic() + 5
                     frame = connection.readline(1024)
                     if not frame:
+                        if time.monotonic() - last_frame_at >= IDLE_RECONNECT_SECONDS:
+                            ssid = network_for_idle_check()
+                            if idle_reconnect_due(last_frame_at, time.monotonic(), ssid):
+                                raise serial.SerialException(
+                                    f"No Bluetooth frames for {IDLE_RECONNECT_SECONDS}s on {RESTORE}")
+                            if ssid != RESTORE:
+                                last_frame_at = time.monotonic()
+                        continue
+                    if frame.startswith(b"CSI|"):
+                        try:
+                            csi.submit(frame[4:].decode("ascii").strip())
+                        except UnicodeDecodeError:
+                            pass
+                        continue
+                    last_frame_at = time.monotonic()
+                    if frame.startswith(b"STATUS|"):
+                        try:
+                            status_id = samples.accept_status(json.loads(frame[7:]))
+                            samples.sync_status_once()
+                            print(f"Bluetooth board queue status stored id={status_id}", flush=True)
+                        except (ValueError, TypeError, sqlite3.Error, UnicodeDecodeError) as error:
+                            print(f"Rejected Bluetooth board status: {error}", flush=True)
                         continue
                     if frame.startswith(b"DATA|"):
                         try:
@@ -210,6 +293,10 @@ def main() -> None:
                             continue
                         connection.write(f"ACK|{event_id}\n".encode("ascii"))
                         connection.flush()
+                        try:
+                            record_frame(event_id)
+                        except OSError as error:
+                            print(f"Bluetooth frame marker unavailable: {error}", flush=True)
                         print(f"Bluetooth sensor stored event={event_id} duplicate={duplicate}", flush=True)
                         samples.sync_once()
                         continue
@@ -219,6 +306,15 @@ def main() -> None:
                               f"forecast=+{alert['horizon_minutes']}m", flush=True)
                         if report_to_backend(args.api, alert):
                             reported.add(alert["event_id"])
+                        if args.sos_voice and alert["simulated"] is False:
+                            from scripts.sos_voice import dispatch
+                            try:
+                                result = dispatch(alert, args.sos_database)
+                                print(f"SOS voice event={alert['event_id']} state={result['state']} "
+                                      f"sent={result['messages_sent']}", flush=True)
+                            except (OSError, ValueError, sqlite3.Error) as error:
+                                print(f"SOS voice event={alert['event_id']} deferred: "
+                                      f"{type(error).__name__}", flush=True)
         except (serial.SerialException, OSError) as error:
             print(f"Bluetooth serial disconnected: {error}; retrying in 2 seconds", flush=True)
             time.sleep(2)

@@ -18,3 +18,6 @@ int delivery_queue_contains(delivery_queue_t *queue, const char *event_id);
 int delivery_queue_repair_missing_head(delivery_queue_t *queue);
 int delivery_queue_ack_head(delivery_queue_t *queue, const char *event_id);
 uint8_t delivery_queue_count(const delivery_queue_t *queue);
+/* Read pending IDs in queue order without exposing sensor payloads. */
+int delivery_queue_list_ids(delivery_queue_t *queue,
+                            char ids[DELIVERY_QUEUE_CAPACITY][DELIVERY_EVENT_ID_MAX]);

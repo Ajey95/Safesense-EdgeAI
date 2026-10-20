@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from .forecast_model import ForecastModel, HORIZONS
@@ -24,6 +25,12 @@ class ReplayRequest(BaseModel):
     seed: int = Field(ge=1, le=999)
     wifi_fault: bool = False
     port: str = Field(pattern=r"^COM[0-9]{1,3}$")
+
+
+class VoiceScenarioRequest(BaseModel):
+    scenario: str
+    minute: int = Field(ge=60, le=110)
+    seed: int = Field(ge=1, le=999)
 
 
 @lru_cache(maxsize=1)
@@ -93,6 +100,33 @@ def episode(
         result["actual_future"] = values[[minute + h for h in HORIZONS]].tolist()
         result["actual_breach"] = {"at_minute": actual_offset, "channel": actual_channel} if actual_offset is not None else None
     return result
+
+
+@router.post("/voice-scenario")
+def send_voice_scenario(body: VoiceScenarioRequest, request: Request,
+                        control: str | None = Header(default=None, alias="X-SafeSense-Control")) -> dict:
+    """Send a scenario forecast in the real voice format, with synthetic provenance."""
+    if request.client is None or request.client.host not in {"127.0.0.1", "::1", "testclient"} or control != "dashboard":
+        raise HTTPException(status_code=403, detail="Local dashboard control required")
+    result = episode(body.scenario, body.minute, body.seed, False)
+    breach = result["breach"]
+    if breach is None:
+        raise HTTPException(status_code=409, detail="This forecast has no early alert at the selected minute")
+    from scripts.sos_voice import VoiceConfig, _message, dispatch_scenario_voice
+    alert = {"event_id": f"scenario-{uuid4()}", "simulated": True,
+             "scenario_voice": True, "room": result["scenario"]["room"],
+             "channel": {"temperature_c": "Temperature", "humidity_pct": "Humidity",
+                         "gas_resistance_ohm": "BME680 gas resistance"}[breach["channel"]],
+             "horizon_minutes": breach["at_minute"], "direction": breach["direction"],
+             "response": result["scenario"]["response"]}
+    try:
+        config = VoiceConfig.from_environment()
+        delivery = dispatch_scenario_voice(alert, ROOT / "data/live/sos_voice.db", config)
+    except (OSError, ValueError) as error:
+        raise HTTPException(status_code=503, detail=f"Telegram voice unavailable: {type(error).__name__}") from error
+    return {"source": "SYNTHETIC_FORECAST_SCENARIO", "scenario_event_id": result["event_id"],
+            "voice_event_id": alert["event_id"], "message": _message(alert),
+            "configured_contacts": len(config.chat_ids), **delivery}
 
 
 @router.post("/replay")

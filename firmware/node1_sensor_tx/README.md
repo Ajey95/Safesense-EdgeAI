@@ -26,6 +26,19 @@ measurements. This start address was verified on the attached module after an
 
 ## TX behavior
 
+When Wi-Fi starts, this firmware also captures measured CSI. In direct laptop
+AP mode it exports those packets over Wi-Fi UDP while the laptop is associated
+with `SafeSense-TX-Laptop`, or over Bluetooth SPP when that link is active.
+USB serial remains optional for diagnostics and flashing. Verify fresh sensor
+events and CSI packets after flashing; the people-count model is not validated
+on this board or in this room.
+
+The wireless CSI message uses `WISDOM_CSI,2` and carries the full 128 signed
+I/Q bytes from each exported packet. The laptop journals those bytes before
+acknowledging its batch, then selects the existing 50 pair positions for the
+count model. Earlier `WISDOM_CSI,1` messages remain readable as selected-pair
+records. This changes packet evidence, not the model's new-room accuracy.
+
 Every sample is encoded as bounded JSON with a stable random `event_id`, TX
 device ID, sequence, BME680 readings (gas resistance in ohms), raw MQ-135 ADC,
 and `gas_risk: "UNAVAILABLE"`. No ppm, IAQ, or calibrated MQ risk is inferred.
@@ -36,6 +49,13 @@ record. Otherwise the record remains pending and is retried. When Wi-Fi is
 ready, UDP packets to RX port 3333 provide traffic for CSI capture. Live RX
 logs confirmed UDP receipt, 128-byte CSI callbacks, and masked diagnostic
 100-frame windows; no activity classification is claimed.
+
+In direct laptop mode the TX also sends a payload-free queue status over Wi-Fi
+HTTP or Bluetooth SPP before and after delivery. It includes depth, pending
+event IDs, last enqueued ID, and last exact-ID ACK. The laptop journals these
+status frames separately from sensor events and syncs them to the backend.
+The dashboard marks status stale after 45 seconds. This status report does not
+replace the sensor event's durable NVS queue or its exact-ID acknowledgement.
 
 On the first boot of the corrected BME680 calibration driver, a versioned
 migration discards only the pre-fix `sstx` test queue, because those entries

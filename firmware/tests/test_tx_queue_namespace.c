@@ -50,11 +50,16 @@ int main(void) {
     assert(delivery_queue_contains(&queue, record.event_id) == 1);
     assert(delivery_queue_contains(&queue, "tx-other") == 0);
     assert(delivery_queue_count(&queue) == 1);
+    char pending_ids[DELIVERY_QUEUE_CAPACITY][DELIVERY_EVENT_ID_MAX] = {{0}};
+    assert(delivery_queue_list_ids(&queue, pending_ids) == 1);
+    assert(strcmp(pending_ids[0], record.event_id) == 0);
     slots[1] = record; occupied[1] = true;
     occupied[0] = false;
     queue.head = 0; queue.count = 2;
     assert(delivery_queue_repair_missing_head(&queue) == 1);
     assert(queue.head == 1 && queue.count == 1);
+    assert(delivery_queue_list_ids(&queue, pending_ids) == 1);
+    assert(strcmp(pending_ids[0], record.event_id) == 0);
     assert(delivery_queue_peek(&queue, &(delivery_record_t){0}) == 0);
     const delivery_record_t another = {.event_id="tx-second", .payload="{\"event_id\":\"tx-second\"}"};
     fail_on_commit = commit_calls + 2; /* Blob commit succeeds; queue metadata does not. */

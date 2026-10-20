@@ -39,10 +39,11 @@ int tx_format_json(char *output, size_t capacity, const tx_sample_t *sample) {
     if (sample->mq135_valid) snprintf(mq, sizeof(mq), "%d", sample->mq135_adc_raw);
 
     const int length = snprintf(output, capacity,
-        "{\"schema_version\":1,\"event_id\":\"%s\",\"tx_device_id\":\"%s\",\"sequence\":%lu,\"observed_at\":null,"
+        "{\"schema_version\":1,\"event_id\":\"%s\",\"tx_device_id\":\"%s\",\"sequence\":%lu,\"captured_uptime_ms\":%llu,\"observed_at\":null,"
         "\"bme680\":{\"sensor_healthy\":%s,\"temperature_c\":%s,\"humidity_pct\":%s,\"pressure_pa\":%s,\"gas_resistance_ohm\":%s,\"gas_valid\":%s,\"heat_stable\":%s},"
         "\"mq135\":{\"adc_raw\":%s,\"calibrated\":false},\"gas_risk\":\"UNAVAILABLE\"}",
         sample->event_id, sample->tx_device_id, (unsigned long)sample->sequence,
+        (unsigned long long)sample->captured_uptime_ms,
         sample->bme_healthy ? "true" : "false", temperature, humidity, pressure,
         gas, gas_valid ? "true" : "false",
         sample->bme_healthy && sample->heat_stable ? "true" : "false", mq);

@@ -8,6 +8,7 @@ typedef struct {
     const char *event_id;
     const char *tx_device_id;
     uint32_t sequence;
+    uint64_t captured_uptime_ms;
     bool bme_healthy;
     float temperature_c;
     float humidity_pct;

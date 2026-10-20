@@ -9,7 +9,7 @@ import pytest
 
 np = pytest.importorskip("numpy")
 
-from safesense.forecast_model import ForecastModel, features
+from safesense.forecast_model import ForecastModel, features, recent_trend
 from safesense.forecast_scenarios import SCENARIOS, first_breach, generate_episode
 from safesense.forecast_hardware import parse_demo_result, replay_on_tx
 from scripts.bt_alert_receiver import handle_frame, parse_alert, stored_ids
@@ -34,6 +34,20 @@ def test_heldout_families_are_disjoint_and_future_is_not_a_feature():
     before = features(values, 75, scenario.room)
     values[76:] = 999
     assert np.array_equal(before, features(values, 75, scenario.room))
+
+
+def test_default_demo_alert_precedes_breach_when_recent_trend_does_not():
+    from safesense.forecast_api import episode
+
+    scenario = next(s for s in SCENARIOS if s.key == "freezer_rebound")
+    values = generate_episode(scenario, 90_000 + SCENARIOS.index(scenario) * 1000 + 17)
+    minute = 86
+    result = episode(scenario.key, minute, 17, True)
+    assert result["breach"]["channel"] == "temperature_c"
+    assert result["breach"]["at_minute"] == 25
+    assert result["actual_breach"] == {"at_minute": 25, "channel": "temperature_c"}
+    assert first_breach(np.vstack((values[minute], recent_trend(values, minute))),
+                        scenario.room, 0, 6) == (None, None)
 
 
 def test_exported_c_forecast_matches_dashboard_model(tmp_path):

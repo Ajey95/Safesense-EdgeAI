@@ -14,12 +14,14 @@ import socket
 import sqlite3
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from safesense.schemas import TelemetryIn
+from safesense.queue_status import BoardQueueIn
 
 
 DISCOVERY = b"SAFESENSE_LAPTOP_V1"
@@ -68,15 +70,29 @@ def convert_tx_event(tx: dict) -> tuple[TelemetryIn, dict | None]:
 
 class Receiver:
     def __init__(self, database: Path, api: str,
-                 ingress: str = "direct-laptop-receiver"):
+                 ingress: str = "direct-laptop-receiver",
+                 sos_voice: bool = False,
+                 sos_database: Path = Path("data/live/sos_voice.db")):
         database.parent.mkdir(parents=True, exist_ok=True)
         self.database = database
         self.api = api.rstrip("/")
         self.ingress = ingress
+        self.sos_voice = sos_voice
+        self.sos_database = sos_database
         self.lock = threading.Lock()
         self.wifi_fault = False
         with self._connection() as db:
-            db.execute("CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL, backend_stored INTEGER NOT NULL DEFAULT 0)")
+            db.execute("CREATE TABLE IF NOT EXISTS events (event_id TEXT PRIMARY KEY, payload TEXT NOT NULL, backend_stored INTEGER NOT NULL DEFAULT 0, sos_pending INTEGER NOT NULL DEFAULT 0)")
+            if "sos_pending" not in {row[1] for row in db.execute("PRAGMA table_info(events)")}:
+                db.execute("ALTER TABLE events ADD COLUMN sos_pending INTEGER NOT NULL DEFAULT 0")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(events)")}
+            if "observed_at_utc" not in columns:
+                db.execute("ALTER TABLE events ADD COLUMN observed_at_utc TEXT")
+            if "capture_age_ms" not in columns:
+                db.execute("ALTER TABLE events ADD COLUMN capture_age_ms INTEGER")
+            db.execute("CREATE TABLE IF NOT EXISTS board_queue_status ("
+                       "status_id TEXT PRIMARY KEY, payload TEXT NOT NULL, "
+                       "laptop_stored_at_utc TEXT NOT NULL, backend_stored INTEGER NOT NULL DEFAULT 0)")
 
     @contextmanager
     def _connection(self):
@@ -95,13 +111,24 @@ class Receiver:
     def accept(self, tx: dict, speak_alert: bool = True) -> tuple[str, bool]:
         telemetry, alert = convert_tx_event(tx)
         event_id = telemetry.event_id
-        raw = json.dumps(tx, sort_keys=True, separators=(",", ":"))
+        normalized = {key: value for key, value in tx.items()
+                      if key != "transmitted_uptime_ms"}
+        raw = json.dumps(normalized, sort_keys=True, separators=(",", ":"))
+        captured = tx.get("captured_uptime_ms")
+        transmitted = tx.get("transmitted_uptime_ms")
+        age = (transmitted - captured if type(captured) is int and type(transmitted) is int
+               and 0 <= captured <= transmitted and transmitted - captured <= 7 * 86400_000
+               else None)
+        observed_at = (datetime.now(timezone.utc) - timedelta(milliseconds=age)).isoformat() \
+            if age is not None else None
         with self.lock, self._connection() as db:
             existing = db.execute("SELECT payload FROM events WHERE event_id=?", (event_id,)).fetchone()
             if existing and existing[0] != raw:
                 raise ValueError("event ID was reused with different data")
             if not existing:
-                db.execute("INSERT INTO events (event_id,payload) VALUES (?,?)", (event_id, raw))
+                pending = int(self.sos_voice and alert is not None and tx.get("simulated") is False)
+                db.execute("INSERT INTO events (event_id,payload,sos_pending,observed_at_utc,capture_age_ms) "
+                           "VALUES (?,?,?,?,?)", (event_id, raw, pending, observed_at, age))
         if not existing and alert is not None and speak_alert:
             from scripts.bt_alert_receiver import speak
             try:
@@ -111,13 +138,80 @@ class Receiver:
                 print(f"voice attempt unavailable for {event_id}: {error}", flush=True)
         return event_id, existing is not None
 
-    def sync_once(self) -> int:
+    def accept_status(self, value: dict) -> str:
+        """Commit a board observation locally before telling the ESP32 it was received."""
+        status = BoardQueueIn.model_validate(value)
+        payload = status.model_dump_json()
+        with self.lock, self._connection() as db:
+            existing = db.execute("SELECT payload FROM board_queue_status WHERE status_id=?",
+                                  (status.status_id,)).fetchone()
+            if existing and existing[0] != payload:
+                raise ValueError("status ID was reused with different data")
+            if not existing:
+                db.execute("INSERT INTO board_queue_status "
+                           "(status_id,payload,laptop_stored_at_utc) VALUES (?,?,?)",
+                           (status.status_id, payload, datetime.now(timezone.utc).isoformat()))
+        return status.status_id
+
+    def sync_status_once(self) -> int:
         with self._connection() as db:
-            rows = db.execute("SELECT event_id,payload FROM events WHERE backend_stored=0 ORDER BY rowid LIMIT 8").fetchall()
+            rows = db.execute("SELECT status_id,payload,laptop_stored_at_utc "
+                              "FROM board_queue_status WHERE backend_stored=0 "
+                              "ORDER BY rowid LIMIT 8").fetchall()
         synced = 0
+        for status_id, payload, stored_at in rows:
+            body = {**json.loads(payload), "laptop_stored_at_utc": stored_at}
+            request = Request(f"{self.api}/api/v1/live/board-queue",
+                              data=json.dumps(body).encode("utf-8"),
+                              headers={"Content-Type": "application/json",
+                                       "X-SafeSense-Ingress": self.ingress})
+            try:
+                with urlopen(request, timeout=5) as response:
+                    result = json.load(response)
+                if result.get("accepted") is not True or result.get("status_id") != status_id:
+                    break
+            except (HTTPError, URLError, TimeoutError, OSError, ValueError):
+                break
+            with self._connection() as db:
+                db.execute("UPDATE board_queue_status SET backend_stored=1 WHERE status_id=?",
+                           (status_id,))
+            synced += 1
+        return synced
+
+    def dispatch_sos_once(self) -> int:
+        if not self.sos_voice:
+            return 0
+        from scripts.sos_voice import dispatch
+        with self._connection() as db:
+            rows = db.execute("SELECT event_id,payload FROM events WHERE sos_pending=1 ORDER BY rowid LIMIT 4").fetchall()
         for event_id, payload in rows:
             tx = json.loads(payload)
+            _, alert = convert_tx_event(tx)
+            if alert is not None and tx.get("simulated") is False:
+                result = dispatch({"event_id": event_id, "room": ROOMS[alert["room"]],
+                                   "channel": CHANNELS[alert["channel"]],
+                                   "horizon_minutes": alert["horizon_minutes"],
+                                   "simulated": False}, self.sos_database)
+                if result["state"] == "DEFERRED_OFFLINE":
+                    print(f"SOS voice event={event_id} deferred until internet returns", flush=True)
+                    break
+                print(f"SOS voice event={event_id} sent={result['messages_sent']}", flush=True)
+            with self._connection() as db:
+                db.execute("UPDATE events SET sos_pending=0 WHERE event_id=?", (event_id,))
+        return len(rows)
+
+    def sync_once(self) -> int:
+        with self._connection() as db:
+            rows = db.execute("SELECT event_id,payload,observed_at_utc,capture_age_ms FROM events "
+                              "WHERE backend_stored=0 ORDER BY rowid LIMIT 8").fetchall()
+        synced = 0
+        for event_id, payload, observed_at, capture_age_ms in rows:
+            tx = json.loads(payload)
             telemetry, _ = convert_tx_event(tx)
+            if observed_at is not None:
+                telemetry = telemetry.model_copy(update={
+                    "observed_at": datetime.fromisoformat(observed_at),
+                    "capture_age_ms": capture_age_ms})
             body = telemetry.model_dump_json().encode("utf-8")
             request = Request(f"{self.api}/api/v1/telemetry", data=body,
                               headers={"Content-Type": "application/json",
@@ -196,7 +290,7 @@ def handler_for(receiver: Receiver):
                     return
                 self._json(200, receiver.counts())
                 return
-            if self.path != "/api/v1/tx/environment":
+            if self.path not in {"/api/v1/tx/environment", "/api/v1/tx/status"}:
                 self._json(404, {"error": "not found"})
                 return
             if not (self.client_address[0].startswith("192.168.4.") or
@@ -211,6 +305,10 @@ def handler_for(receiver: Receiver):
                 if not 1 <= size <= 2048:
                     raise ValueError("invalid body size")
                 tx = json.loads(self.rfile.read(size))
+                if self.path == "/api/v1/tx/status":
+                    status_id = receiver.accept_status(tx)
+                    self._json(202, {"status_id": status_id, "status": "STORED"})
+                    return
                 event_id, duplicate = receiver.accept(tx)
             except (ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
                 self._json(400, {"error": str(error)})
@@ -235,16 +333,34 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--database", type=Path, default=Path("data/live/direct_laptop.db"))
     parser.add_argument("--api", default="http://127.0.0.1:8000")
+    parser.add_argument("--sos-voice", action="store_true",
+                        help="Opt in to Telegram voice messages for real forecast alerts only")
+    parser.add_argument("--sos-database", type=Path, default=Path("data/live/sos_voice.db"))
     args = parser.parse_args()
-    receiver = Receiver(args.database, args.api)
+    if args.sos_voice:
+        from scripts.sos_voice import VoiceConfig
+        VoiceConfig.from_environment()
+    receiver = Receiver(args.database, args.api, sos_voice=args.sos_voice,
+                        sos_database=args.sos_database)
     stop = threading.Event()
     threading.Thread(target=discovery_loop, args=(stop,), daemon=True).start()
+    from scripts.wireless_csi_receiver import wifi_csi_loop
+    threading.Thread(target=wifi_csi_loop, args=(args.api,), daemon=True).start()
 
     def sync_loop():
         while not stop.wait(2):
             receiver.sync_once()
+            receiver.sync_status_once()
 
     threading.Thread(target=sync_loop, daemon=True).start()
+    if args.sos_voice:
+        def sos_loop():
+            while not stop.wait(20):
+                try:
+                    receiver.dispatch_sos_once()
+                except (OSError, ValueError, sqlite3.Error, json.JSONDecodeError) as error:
+                    print(f"SOS voice worker deferred: {type(error).__name__}", flush=True)
+        threading.Thread(target=sos_loop, daemon=True).start()
     with ThreadingHTTPServer(("0.0.0.0", args.port), handler_for(receiver)) as server:
         print(f"Direct laptop receiver listening on port {args.port}", flush=True)
         try:

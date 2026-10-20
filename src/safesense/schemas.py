@@ -115,6 +115,7 @@ class TelemetryIn(BaseModel):
     # ESP32 nodes do not have a trustworthy wall clock until time sync. The
     # server substitutes its receive timestamp when the device sends null.
     observed_at: datetime | None = None
+    capture_age_ms: int | None = Field(default=None, ge=0)
     firmware_version: str | None = Field(default=None, max_length=80)
     environment: EnvironmentalReading
     csi: CsiReading

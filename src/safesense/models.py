@@ -55,3 +55,15 @@ class BridgeHeartbeat(Base):
     name: Mapped[str] = mapped_column(String(40), primary_key=True)
     reported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+
+class BoardQueueStatus(Base):
+    """Wireless ESP32 queue observation, after laptop and backend storage."""
+
+    __tablename__ = "board_queue_status"
+    status_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    device_id: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    route: Mapped[str] = mapped_column(String(16), nullable=False)
+    laptop_stored_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False)

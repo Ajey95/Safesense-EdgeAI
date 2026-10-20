@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "bme680_esp_idf.h"
+#include "csi_capture_esp_idf.h"
 #include "delivery_queue.h"
 #include "forecast.h"
 #include "bt_alert.h"
@@ -27,6 +28,8 @@
 #define MQ135_ADC_CHANNEL ADC_CHANNEL_6
 #define CSI_PACKET_PORT 3333
 #define LAPTOP_DISCOVERY_PORT 3334
+#define CSI_UDP_EXPORT_PORT 3335
+#define CSI_EXPORT_INTERVAL_US 50000
 
 static const char *TAG = "safesense_tx";
 static delivery_queue_t queue;
@@ -34,10 +37,15 @@ static i2c_master_bus_handle_t i2c_bus;
 static bme680_esp_idf_t bme;
 static bool bme_ready;
 static uint32_t sequence;
+static uint32_t queue_status_sequence;
+static char last_enqueued_id[DELIVERY_EVENT_ID_MAX];
+static char last_acked_id[DELIVERY_EVENT_ID_MAX];
+static const char *last_ack_route = "NONE";
 static float minute_history[FORECAST_HISTORY_MINUTES][FORECAST_CHANNELS];
 static unsigned history_count;
 static int64_t last_history_us;
 static int64_t last_forecast_alert_us;
+static QueueHandle_t csi_export_queue;
 #if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
 static uint32_t laptop_ipv4;
 static portMUX_TYPE laptop_ip_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -47,10 +55,77 @@ static bool forecast_demo_range_crossed(const float prediction[FORECAST_HORIZONS
                                         uint8_t room, uint8_t *minutes, uint8_t *channel);
 static void make_event_id(char out[DELIVERY_EVENT_ID_MAX]);
 static void flush_pending(void);
+static bool flush_pending_bluetooth(const char *current_id);
 static bool transport_link_connected(void);
 static bool add_alert_metadata(delivery_record_t *record, bool alert,
                                uint8_t room, uint8_t minutes, uint8_t channel,
                                bool simulated);
+
+/* Preserve the full measured I/Q payload; the laptop selects the model's
+ * 50 pairs after journaling. Invalid-first-word is retained as metadata. */
+static void emit_count_csi(const csi_packet_t *packet, uint32_t sequence, int wifi_socket) {
+    static const char alphabet[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    char encoded[173];
+    unsigned output = 0;
+    for (unsigned input = 0; input < CSI_RAW_IQ_BYTES; input += 3) {
+        const uint32_t chunk = ((uint32_t)(uint8_t)packet->iq[input] << 16) |
+                               ((uint32_t)(input + 1 < CSI_RAW_IQ_BYTES ? (uint8_t)packet->iq[input + 1] : 0) << 8) |
+                               (input + 2 < CSI_RAW_IQ_BYTES ? (uint8_t)packet->iq[input + 2] : 0);
+        encoded[output++] = alphabet[(chunk >> 18) & 63];
+        encoded[output++] = alphabet[(chunk >> 12) & 63];
+        encoded[output++] = input + 1 < CSI_RAW_IQ_BYTES ? alphabet[(chunk >> 6) & 63] : '=';
+        encoded[output++] = input + 2 < CSI_RAW_IQ_BYTES ? alphabet[chunk & 63] : '=';
+    }
+    encoded[output] = '\0';
+    csi_capture_stats_t stats;
+    csi_capture_get_stats(&stats);
+    char line[240];
+    const int length = snprintf(line, sizeof(line), "WISDOM_CSI,2,%lu,%lld,%d,%u,%lu,%s",
+                                (unsigned long)sequence, (long long)packet->received_us,
+                                (int)packet->rssi_dbm, packet->first_word_invalid ? 1u : 0u,
+                                (unsigned long)stats.queue_full, encoded);
+    if (length <= 0 || length >= sizeof(line)) return;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    uint32_t destination_ip;
+    portENTER_CRITICAL(&laptop_ip_lock);
+    destination_ip = laptop_ipv4;
+    portEXIT_CRITICAL(&laptop_ip_lock);
+    if (wifi_socket >= 0 && destination_ip && safesense_wifi_ap_client_connected()) {
+        const struct sockaddr_in destination = {.sin_family = AF_INET,
+            .sin_port = htons(CSI_UDP_EXPORT_PORT), .sin_addr.s_addr = destination_ip};
+        if (sendto(wifi_socket, line, length, 0, (const struct sockaddr *)&destination,
+                   sizeof(destination)) == length) return;
+    }
+#else
+    (void)wifi_socket;
+#endif
+    (void)bt_alert_send_csi(line, (size_t)length);
+}
+
+static void csi_export_task(void *unused) {
+    (void)unused;
+    csi_packet_t packet;
+    uint32_t sequence = 0;
+    int64_t last_export_us = 0;
+    const int wifi_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+    while (true) {
+        if (xQueueReceive(csi_export_queue, &packet, portMAX_DELAY) != pdTRUE) continue;
+        if (last_export_us && packet.received_us - last_export_us < CSI_EXPORT_INTERVAL_US)
+            continue;
+        last_export_us = packet.received_us;
+        emit_count_csi(&packet, ++sequence, wifi_socket);
+    }
+}
+
+static void start_csi_export(void) {
+    csi_export_queue = xQueueCreate(32, sizeof(csi_packet_t));
+    if (!csi_export_queue || csi_capture_start(csi_export_queue) != 0 ||
+        xTaskCreate(csi_export_task, "csi_export", 4096, NULL, 5, NULL) != pdPASS)
+        ESP_LOGW(TAG, "CSI wireless export unavailable; environmental sensing continues");
+    else
+        ESP_LOGI(TAG, "CSI wireless export ready; Wi-Fi UDP primary, Bluetooth SPP fallback");
+}
 
 #if CONFIG_SAFESENSE_TX_SCENARIO_SERIAL_DEMO
 static void scenario_serial_loop(void) {
@@ -111,6 +186,7 @@ static void scenario_serial_loop(void) {
         make_event_id(record.event_id);
         const tx_sample_t sample = {.event_id = record.event_id,
             .tx_device_id = "safesense-synthetic-tx", .sequence = sequence++,
+            .captured_uptime_ms = (uint64_t)(esp_timer_get_time() / 1000),
             .bme_healthy = true, .temperature_c = value[0], .humidity_pct = value[1],
             .pressure_pa = value[2], .gas_valid = true, .heat_stable = true,
             .gas_resistance_ohm = value[3], .mq135_valid = true,
@@ -347,6 +423,13 @@ static bool post_record(const delivery_record_t *record) {
     endpoint = direct_url;
 #endif
     if (!endpoint[0]) return false;
+    const size_t payload_length = strlen(record->payload);
+    if (payload_length == 0 || record->payload[payload_length - 1] != '}') return false;
+    char transmitted[832];
+    const int transmitted_length = snprintf(transmitted, sizeof(transmitted),
+        "%.*s,\"transmitted_uptime_ms\":%llu}", (int)(payload_length - 1), record->payload,
+        (unsigned long long)(esp_timer_get_time() / 1000));
+    if (transmitted_length <= 0 || transmitted_length >= sizeof(transmitted)) return false;
     http_reply_t reply = {0};
     const esp_http_client_config_t config = {
         .url = endpoint,
@@ -358,7 +441,7 @@ static bool post_record(const delivery_record_t *record) {
     if (!client) return false;
     esp_http_client_set_method(client, HTTP_METHOD_POST);
     esp_http_client_set_header(client, "Content-Type", "application/json");
-    esp_http_client_set_post_field(client, record->payload, strlen(record->payload));
+    esp_http_client_set_post_field(client, transmitted, transmitted_length);
     const esp_err_t result = esp_http_client_perform(client);
     const int status = result == ESP_OK ? esp_http_client_get_status_code(client) : 0;
     const bool accepted = result == ESP_OK && (status == 200 || status == 202) &&
@@ -366,6 +449,69 @@ static bool post_record(const delivery_record_t *record) {
     if (!accepted) ESP_LOGW(TAG, "Wi-Fi HTTP deferred: %s status=%d event=%s", esp_err_to_name(result), status, record->event_id);
     esp_http_client_cleanup(client);
     return accepted;
+}
+
+/* This is a board observation, separate from a laptop or backend receipt. */
+static void report_queue_status(void) {
+    char ids[DELIVERY_QUEUE_CAPACITY][DELIVERY_EVENT_ID_MAX] = {{0}};
+    const int count = delivery_queue_list_ids(&queue, ids);
+    if (count < 0) {
+        ESP_LOGW(TAG, "NVS status unavailable: pending ID read failed");
+        return;
+    }
+    char body[850];
+    uint32_t nonce[2];
+    esp_fill_random(nonce, sizeof(nonce));
+    int used = snprintf(body, sizeof(body),
+        "{\"status_id\":\"st-%08lx%08lx\",\"device_id\":\"%s\","
+        "\"sequence\":%lu,\"uptime_ms\":%llu,\"queue_depth\":%d,"
+        "\"pending_event_ids\":[",
+        (unsigned long)nonce[0], (unsigned long)nonce[1],
+        CONFIG_SAFESENSE_TX_DEVICE_ID, (unsigned long)++queue_status_sequence,
+        (unsigned long long)(esp_timer_get_time() / 1000), count);
+    if (used <= 0 || (size_t)used >= sizeof(body)) return;
+    for (int index = 0; index < count; ++index) {
+        const size_t length = strnlen(ids[index], DELIVERY_EVENT_ID_MAX);
+        if (length == 0 || length >= DELIVERY_EVENT_ID_MAX ||
+            strspn(ids[index], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") != length)
+            return;
+        const int written = snprintf(body + used, sizeof(body) - used,
+                                     "%s\"%s\"", index ? "," : "", ids[index]);
+        if (written <= 0 || (size_t)written >= sizeof(body) - (size_t)used) return;
+        used += written;
+    }
+    const int tail = snprintf(body + used, sizeof(body) - used,
+        "],\"last_enqueued_id\":\"%s\",\"last_acked_id\":\"%s\","
+        "\"last_ack_route\":\"%s\"}",
+        last_enqueued_id, last_acked_id, last_ack_route);
+    if (tail <= 0 || (size_t)tail >= sizeof(body) - (size_t)used) return;
+    used += tail;
+#if CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
+    uint32_t ip;
+    portENTER_CRITICAL(&laptop_ip_lock);
+    ip = laptop_ipv4;
+    portEXIT_CRITICAL(&laptop_ip_lock);
+    if (ip && safesense_wifi_ap_client_connected()) {
+        struct in_addr address = {.s_addr = ip};
+        char host[INET_ADDRSTRLEN], endpoint[128];
+        if (inet_ntop(AF_INET, &address, host, sizeof(host))) {
+            snprintf(endpoint, sizeof(endpoint), "http://%s:%d/api/v1/tx/status",
+                     host, CONFIG_SAFESENSE_TX_LAPTOP_HTTP_PORT);
+            const esp_http_client_config_t config = {.url = endpoint, .timeout_ms = 1200};
+            esp_http_client_handle_t client = esp_http_client_init(&config);
+            if (client) {
+                esp_http_client_set_method(client, HTTP_METHOD_POST);
+                esp_http_client_set_header(client, "Content-Type", "application/json");
+                esp_http_client_set_post_field(client, body, used);
+                const esp_err_t result = esp_http_client_perform(client);
+                const int code = result == ESP_OK ? esp_http_client_get_status_code(client) : 0;
+                esp_http_client_cleanup(client);
+                if (code == 202) return;
+            }
+        }
+    }
+#endif
+    (void)bt_alert_send_status(body, (size_t)used);
 }
 
 static void flush_pending(void) {
@@ -380,8 +526,30 @@ static void flush_pending(void) {
             ESP_LOGE(TAG, "HTTP accepted %s but NVS queue acknowledgement failed", record.event_id);
             break;
         }
+        snprintf(last_acked_id, sizeof(last_acked_id), "%s", record.event_id);
+        last_ack_route = "WIFI";
         ESP_LOGI(TAG, "Wi-Fi receiver accepted event=%s pending=%u", record.event_id, delivery_queue_count(&queue));
     }
+}
+
+static bool flush_pending_bluetooth(const char *current_id) {
+    if (!bt_alert_connected()) return false;
+    bool current_stored = false;
+    delivery_record_t pending;
+    for (unsigned attempt = 0; attempt < 4 && delivery_queue_count(&queue) > 0; ++attempt) {
+        if (delivery_queue_peek(&queue, &pending) != 0) break;
+        if (!bt_alert_send_sample(pending.event_id, pending.payload, 1800)) break;
+        if (delivery_queue_ack_head(&queue, pending.event_id) != 0) {
+            ESP_LOGE(TAG, "Bluetooth accepted %s but NVS queue acknowledgement failed", pending.event_id);
+            break;
+        }
+        snprintf(last_acked_id, sizeof(last_acked_id), "%s", pending.event_id);
+        last_ack_route = "BLUETOOTH";
+        if (current_id && strcmp(current_id, pending.event_id) == 0) current_stored = true;
+        ESP_LOGI(TAG, "Bluetooth receiver accepted event=%s pending=%u",
+                 pending.event_id, delivery_queue_count(&queue));
+    }
+    return current_stored;
 }
 
 static void make_event_id(char out[DELIVERY_EVENT_ID_MAX]) {
@@ -459,6 +627,7 @@ void app_main(void) {
         if (!wifi_ready) ESP_LOGW(TAG, "Wi-Fi not ready; records remain in NVS");
     } else ESP_LOGW(TAG, "Wi-Fi SSID not configured; local sensing and NVS logging only");
 #endif
+    if (wifi_ready) start_csi_export();
 #if !CONFIG_SAFESENSE_TX_DIRECT_LAPTOP_AP
     bool probe_started = false;
     if (wifi_ready && CONFIG_SAFESENSE_TX_RX_UDP_IP[0]) {
@@ -526,7 +695,8 @@ void app_main(void) {
         make_event_id(record.event_id);
         const tx_sample_t sample = {
             .event_id = record.event_id, .tx_device_id = CONFIG_SAFESENSE_TX_DEVICE_ID,
-            .sequence = sequence++, .bme_healthy = bme_status == BME680_OK,
+            .sequence = sequence++, .captured_uptime_ms = (uint64_t)(esp_timer_get_time() / 1000),
+            .bme_healthy = bme_status == BME680_OK,
             .temperature_c = reading.temperature_c, .humidity_pct = reading.humidity_percent,
             .pressure_pa = reading.pressure_pa,
             .gas_valid = bme_status == BME680_OK && reading.gas_valid && reading.heat_stable,
@@ -542,28 +712,36 @@ void app_main(void) {
             ESP_LOGE(TAG, "TX JSON could not be formatted; check device ID or sensor values");
         else {
             event_valid = true;
+            ESP_LOGI(TAG, "Sensor sample event=%s JSON=%s", record.event_id, record.payload);
             if (delivery_queue_enqueue(&queue, &record) != 0)
                 ESP_LOGE(TAG, "NVS queue full/write failed; pending=%u", delivery_queue_count(&queue));
             else {
                 queued = true;
+                snprintf(last_enqueued_id, sizeof(last_enqueued_id), "%s", record.event_id);
                 ESP_LOGI(TAG, "Persisted event=%s pending=%u JSON=%s", record.event_id,
                          delivery_queue_count(&queue), record.payload);
             }
         }
+        report_queue_status();
         if (wifi_ready) flush_pending();
         const bool wifi_sample_acked = queued && delivery_queue_contains(&queue, record.event_id) == 0;
-        if (event_valid && !wifi_sample_acked && bt_alert_connected()) {
-            const bool bt_sample_stored = bt_alert_send_sample(record.event_id, record.payload, 1800);
+        bool bt_sample_stored = false;
+        if (!wifi_sample_acked && bt_alert_connected()) {
+            bt_sample_stored = flush_pending_bluetooth(event_valid ? record.event_id : NULL);
+        }
+        if (event_valid && !wifi_sample_acked && !bt_sample_stored && bt_alert_connected()) {
+            bt_sample_stored = bt_alert_send_sample(record.event_id, record.payload, 1800);
             ESP_LOGI(TAG, "Bluetooth sensor event=%s laptop_stored=%s", record.event_id,
                      bt_sample_stored ? "YES" : "NO");
         }
+        report_queue_status();
         if (forecast_alert) {
             const bool wifi_acked = wifi_sample_acked;
             ESP_LOGW(TAG, "%s alert in %u min channel=%u event=%s NVS_STORED=%s WIFI_ACK=%s",
                      transport_test ? "Transport test" : "DEMO forecast range crossing",
                      alert_minutes, alert_channel, record.event_id,
                      queued ? "YES" : "NO", wifi_acked ? "YES" : "NO");
-            if (!wifi_acked) {
+            if (!wifi_acked && !bt_sample_stored) {
                 const bool bt_received = bt_alert_send(record.event_id,
                     CONFIG_SAFESENSE_FORECAST_ROOM, alert_minutes, alert_channel,
                     transport_test, 2500);

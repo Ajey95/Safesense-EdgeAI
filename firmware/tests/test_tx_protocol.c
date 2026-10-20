@@ -15,7 +15,7 @@ static void test_json_reports_raw_values_without_inventing_risk(void) {
     };
     assert(tx_format_json(json, sizeof(json), &sample) > 0);
     assert(strcmp(json,
-        "{\"schema_version\":1,\"event_id\":\"tx-001\",\"tx_device_id\":\"safesense-tx-01\",\"sequence\":7,\"observed_at\":null,"
+        "{\"schema_version\":1,\"event_id\":\"tx-001\",\"tx_device_id\":\"safesense-tx-01\",\"sequence\":7,\"captured_uptime_ms\":0,\"observed_at\":null,"
         "\"bme680\":{\"sensor_healthy\":true,\"temperature_c\":30.50,\"humidity_pct\":67.20,\"pressure_pa\":97380.00,\"gas_resistance_ohm\":2637.00,\"gas_valid\":true,\"heat_stable\":true},"
         "\"mq135\":{\"adc_raw\":0,\"calibrated\":false},\"gas_risk\":\"UNAVAILABLE\"}") == 0);
 }
