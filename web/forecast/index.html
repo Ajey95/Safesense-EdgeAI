@@ -75,7 +75,7 @@
     </div>
 
     <div class="detail-grid"><section id="forecast-chart" class="panel chart-panel"><div class="section-head"><h2 id="chart-heading">Temperature Forecast <span>(Next 30 Minutes)</span></h2><div class="chart-legend"><span><i class="blue-line"></i> TinyML forecast</span><span><i class="red-line"></i> <span id="limit-legend">Demo upper limit</span></span><span><i class="gray-line"></i> Current value</span></div></div><div id="chart" class="chart" role="img" aria-label="Temperature forecast graph"></div><div class="chart-tools"><label for="chart-channel">Trace</label><select id="chart-channel"><option value="temperature_c">Temperature</option><option value="humidity_pct">Humidity</option><option value="pressure_pa">Pressure</option><option value="gas_resistance_ohm">BME680 gas resistance</option><option value="mq135_adc_raw">MQ-135 raw ADC</option></select><label class="reveal-control"><input id="reveal-truth" type="checkbox">Reveal simulator future</label><span id="truth-result"></span></div></section>
-    <section id="alert-response" class="panel response-panel"><div class="section-head"><h2>Alert &amp; Response</h2></div><div id="timeline" class="timeline"></div><button id="voice-button" type="button" class="voice-button" disabled>▶ Play forecast voice</button><button id="telegram-voice-button" type="button" class="voice-button telegram-voice-button" disabled>Send forecast voice to Telegram</button><p id="telegram-voice-status" class="telegram-voice-status" role="status">Select a forecast with an early alert, then send its spoken guidance to the configured contact.</p></section></div>
+    <section id="alert-response" class="panel response-panel"><div class="section-head"><h2>Alert &amp; Response</h2></div><div id="timeline" class="timeline"></div><button id="voice-button" type="button" class="voice-button" disabled>▶ Play forecast voice</button><p id="telegram-voice-status" class="telegram-voice-status" role="status">Telegram voice sends automatically when this forecast first warns.</p></section></div>
 
     <section id="status-banner" class="status-banner"><span class="status-circle"><svg><use href="#i-check"/></svg></span><div><strong id="status-title">Preparing forecast</strong><p id="status-copy">The selected episode is synthetic.</p></div><button id="details-button" type="button">View Alert Details <span>→</span></button></section>
     <p class="provenance">Synthetic demonstration · BME680 and MQ-135 channels are modeled signals · MQ-135 is raw ADC, not gas concentration · Simulated acknowledgments are not hardware delivery proof</p>
@@ -86,8 +86,8 @@
     </section>
   </main>
   <dialog id="details-dialog"><button id="close-details" class="dialog-close" type="button" aria-label="Close">×</button><h2>Forecast alert details</h2><div id="details-body"></div><div class="hardware-replay"><h3>Legacy two-board TX replay</h3><p>This optional replay uses the older TX → RX ESP32 Wi-Fi firmware and a laptop Bluetooth receiver. It is separate from the direct-to-laptop route monitored in Live Hardware; this scenario's route graphic remains simulated.</p><label for="tx-port">TX USB port</label><input id="tx-port" value="COM11" pattern="COM[0-9]{1,3}" aria-label="TX USB port"><button id="replay-button" type="button">Replay on TX</button><p id="replay-result" role="status">Requires the older TX/RX setup and a paired laptop Bluetooth receiver.</p></div></dialog>
-  <script src="/forecast-assets/live.js?v=page-exports-20261021" defer></script>
+  <script src="/forecast-assets/live.js?v=transport-log-120s-20261021" defer></script>
   <script src="/forecast-assets/csi.js?v=page-exports-20261021" defer></script>
-  <script src="/forecast-assets/app.js?v=scenario-overview-20261021" defer></script>
+  <script src="/forecast-assets/app.js?v=automatic-telegram-20261021" defer></script>
 </body>
 </html>

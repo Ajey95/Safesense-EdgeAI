@@ -13,6 +13,8 @@ from uuid import uuid4
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from scripts.transport_events import append_event
+
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "data/live/wifi_demo_session.json"
 CANCEL = ROOT / "data/live/wifi_demo_cancel.txt"
@@ -36,6 +38,11 @@ def write_status(state: str, **details: object) -> None:
     temporary = STATUS.with_suffix(f".{os.getpid()}.tmp")
     temporary.write_text(json.dumps(record), encoding="utf-8")
     os.replace(temporary, STATUS)
+    try:
+        append_event(state, **details)
+    except OSError:
+        # A history write must never prevent the timed return to normal Wi-Fi.
+        pass
 
 
 def cancel_requested(session_id: str) -> bool:
@@ -148,7 +155,7 @@ def run_probe_loop(duration: float, session_id: str) -> tuple[int, int, str | No
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--duration", type=int, default=45)
+    parser.add_argument("--duration", type=int, default=120)
     parser.add_argument("--restore-only", action="store_true")
     parser.add_argument("--session-id")
     args = parser.parse_args()
@@ -161,8 +168,8 @@ def main() -> None:
         write_status("RESTORED" if ok else "RESTORE_FAILED", target=RESTORE,
                      current_ssid=current_ssid(), reason=reason)
         return
-    if not 20 <= args.duration <= 90:
-        raise SystemExit("Duration must be 20-90 seconds")
+    if not 20 <= args.duration <= 180:
+        raise SystemExit("Duration must be 20-180 seconds")
     until = datetime.now(timezone.utc) + timedelta(seconds=args.duration + 20)
     ap_connected = False
     failure = None
@@ -171,7 +178,8 @@ def main() -> None:
     session_id = args.session_id or uuid4().hex
     try:
         write_status("CONNECTING", target=TARGET, restore=RESTORE,
-                     session_id=session_id, return_by_utc=until.isoformat())
+                     session_id=session_id, duration_seconds=args.duration,
+                     return_by_utc=until.isoformat())
         if cancel_requested(session_id):
             failure = "Manual return requested"
             return
@@ -186,7 +194,8 @@ def main() -> None:
             return
         until = datetime.now(timezone.utc) + timedelta(seconds=args.duration)
         write_status("ON_SAFESENSE_AP", target=TARGET, restore=RESTORE,
-                     session_id=session_id, return_by_utc=until.isoformat())
+                     session_id=session_id, duration_seconds=args.duration,
+                     return_by_utc=until.isoformat())
         probes_sent, probe_errors, failure = run_probe_loop(args.duration, session_id)
 
     finally:

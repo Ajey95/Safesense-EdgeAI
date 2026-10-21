@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api/v1/live", tags=["live hardware"])
 FRESH_SECONDS = 45
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BT_RECEIVER_LOG = PROJECT_ROOT / "data/live/bt_receiver_autostart.log"
+WIFI_SESSION_LOG = PROJECT_ROOT / "data/live/wifi_demo_session.log"
+WIFI_VISIT_SECONDS = 120
 _bt_start_lock = Lock()
 _bt_last_start = 0.0
 
@@ -133,9 +135,11 @@ def _local_control(request: Request, control: str | None) -> None:
 def _launch_wifi_session(*arguments: str) -> None:
     command = [sys.executable, "-m", "scripts.wifi_demo_session", *arguments]
     try:
-        subprocess.Popen(command, cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        WIFI_SESSION_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with WIFI_SESSION_LOG.open("ab") as log:
+            subprocess.Popen(command, cwd=PROJECT_ROOT, stdin=subprocess.DEVNULL,
+                             stdout=log, stderr=subprocess.STDOUT,
+                             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError as error:
         raise HTTPException(status_code=503, detail=f"Wi-Fi control unavailable: {type(error).__name__}") from error
 
@@ -166,6 +170,7 @@ def _ensure_bluetooth_receiver(session: Session) -> None:
 @router.get("/direct/wifi-session")
 def wifi_session_status() -> dict:
     from scripts.wifi_demo_session import STATUS, TARGET, RESTORE, current_ssid
+    from scripts.transport_events import recent_events
     saved = {}
     if STATUS.exists():
         try:
@@ -174,7 +179,8 @@ def wifi_session_status() -> dict:
             saved = {}
     ssid = current_ssid()
     return {"current_ssid": ssid, "on_safesense_ap": ssid == TARGET,
-            "restore_profile": RESTORE, "session": saved}
+            "restore_profile": RESTORE, "duration_seconds": WIFI_VISIT_SECONDS,
+            "session": saved, "events": recent_events()}
 
 
 @router.post("/direct/wifi-session")
@@ -190,9 +196,11 @@ def start_wifi_session(request: Request,
         raise HTTPException(status_code=409, detail="Connect to Amrita before starting the bounded Wi-Fi demonstration")
     session_id = uuid4().hex
     CANCEL.unlink(missing_ok=True)
-    write_status("STARTING", target=TARGET, restore=RESTORE, session_id=session_id)
-    _launch_wifi_session("--duration", "45", "--session-id", session_id)
-    return {"accepted": True, "target": TARGET, "restore": RESTORE, "duration_seconds": 45}
+    write_status("STARTING", target=TARGET, restore=RESTORE,
+                 session_id=session_id, duration_seconds=WIFI_VISIT_SECONDS)
+    _launch_wifi_session("--duration", str(WIFI_VISIT_SECONDS), "--session-id", session_id)
+    return {"accepted": True, "target": TARGET, "restore": RESTORE,
+            "duration_seconds": WIFI_VISIT_SECONDS}
 
 
 @router.post("/direct/wifi-session/restore")

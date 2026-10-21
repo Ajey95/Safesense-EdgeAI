@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -112,8 +112,11 @@ def send_voice_scenario(body: VoiceScenarioRequest, request: Request,
     breach = result["breach"]
     if breach is None:
         raise HTTPException(status_code=409, detail="This forecast has no early alert at the selected minute")
-    from scripts.sos_voice import VoiceConfig, _message, dispatch_scenario_voice
-    alert = {"event_id": f"scenario-{uuid4()}", "simulated": True,
+    from scripts.sos_voice import VoiceConfig, _message, dispatch_scenario_voice, status
+    # Stable across adjacent warning minutes and page refreshes for this demo day.
+    voice_event_id = (f"scenario-{result['scenario']['key']}-{body.seed:03d}-"
+                      f"{datetime.now(timezone.utc):%Y%m%d}")
+    alert = {"event_id": voice_event_id, "simulated": True,
              "scenario_voice": True, "room": result["scenario"]["room"],
              "channel": {"temperature_c": "Temperature", "humidity_pct": "Humidity",
                          "gas_resistance_ohm": "BME680 gas resistance"}[breach["channel"]],
@@ -126,7 +129,9 @@ def send_voice_scenario(body: VoiceScenarioRequest, request: Request,
         raise HTTPException(status_code=503, detail=f"Telegram voice unavailable: {type(error).__name__}") from error
     return {"source": "SYNTHETIC_FORECAST_SCENARIO", "scenario_event_id": result["event_id"],
             "voice_event_id": alert["event_id"], "message": _message(alert),
-            "configured_contacts": len(config.chat_ids), **delivery}
+            "configured_contacts": len(config.chat_ids),
+            "delivery_status": status(ROOT / "data/live/sos_voice.db", voice_event_id),
+            **delivery}
 
 
 @router.post("/replay")

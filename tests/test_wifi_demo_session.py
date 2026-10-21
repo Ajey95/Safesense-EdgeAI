@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import socket
+import pytest
 
 from fastapi.testclient import TestClient
 
@@ -8,7 +9,12 @@ from safesense import live_api
 from safesense.main import app
 from scripts import wifi_demo_session
 from scripts import bt_alert_receiver
-from scripts import transport_handoff
+from scripts import transport_handoff, transport_events
+
+
+@pytest.fixture(autouse=True)
+def isolated_transport_history(monkeypatch, tmp_path):
+    monkeypatch.setattr(transport_events, "HISTORY", tmp_path / "transport_events.jsonl")
 
 
 def test_current_ssid_uses_ssid_field_not_bssid(monkeypatch):
@@ -87,10 +93,12 @@ def test_wifi_demo_control_is_local_and_bounded(monkeypatch, tmp_path):
         response = client.post("/api/v1/live/direct/wifi-session",
                                headers={"X-SafeSense-Control": "dashboard"})
         assert response.status_code == 200
-        assert response.json()["duration_seconds"] == 45
+        assert response.json()["duration_seconds"] == 120
         assert len(launched) == 1
-        assert launched[0][:2] == ("--duration", "45")
+        assert launched[0][:2] == ("--duration", "120")
         assert launched[0][2] == "--session-id"
+        history = client.get("/api/v1/live/direct/wifi-session").json()["events"]
+        assert history[0]["state"] == "STARTING"
         assert client.post("/api/v1/live/direct/wifi-session/restore",
                            headers={"X-SafeSense-Control": "dashboard"}).json()["accepted"]
         assert wifi_demo_session.CANCEL.read_text(encoding="ascii") == launched[0][3]
@@ -202,3 +210,19 @@ def test_restore_button_requests_bluetooth_even_when_amrita_is_connected(monkeyp
                              headers={"X-SafeSense-Control": "dashboard"}).json()
     assert result["accepted"] is True and result["already_restored"] is True
     assert transport_handoff.read_record(transport_handoff.REQUEST)["request_id"] == result["request_id"]
+
+
+def test_transport_history_records_handoff_once_and_ignores_bad_lines(monkeypatch, tmp_path):
+    monkeypatch.setattr(transport_handoff, "REQUEST", tmp_path / "request.json")
+    monkeypatch.setattr(transport_handoff, "FRAME", tmp_path / "frame.json")
+    transport_events.append_event("ON_SAFESENSE_AP", duration_seconds=120)
+    requested = transport_handoff.request_reconnect()
+    transport_handoff.record_frame("tx-first-packet")
+    transport_handoff.record_frame("tx-next-packet")
+    with transport_events.HISTORY.open("a", encoding="utf-8") as handle:
+        handle.write("broken json\n")
+    history = transport_events.recent_events()
+    assert [item["state"] for item in history] == [
+        "BLUETOOTH_PACKET_STORED", "BLUETOOTH_RECONNECT_REQUESTED", "ON_SAFESENSE_AP"]
+    assert history[0]["event_id"] == "tx-first-packet"
+    assert history[0]["request_id"] == requested["request_id"]

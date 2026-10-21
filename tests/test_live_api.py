@@ -9,7 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from safesense.database import Base, get_session
 from safesense.main import app
 from safesense import live_api
-from scripts import transport_handoff, wifi_demo_session
+from scripts import transport_handoff, transport_events, wifi_demo_session
+
+
+@pytest.fixture(autouse=True)
+def isolated_transport_history(monkeypatch, tmp_path):
+    monkeypatch.setattr(transport_events, "HISTORY", tmp_path / "transport_events.jsonl")
 
 
 def _telemetry(event_id: str, *, simulated: bool = False) -> dict:

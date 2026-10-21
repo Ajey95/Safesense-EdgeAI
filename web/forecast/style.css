@@ -166,6 +166,7 @@ body[data-view="live"] .top-search,body[data-view="live"] .location-button{displ
 .live-sensor-warning{border-color:#ffd4a9;background:#fff8ef;margin-bottom:15px}.live-sensor-warning strong{color:#9b531c}.live-sensor-warning p{color:#805d40;font-size:12px;line-height:1.5;margin:7px 0 0}
 
 .transport-switcher{margin-bottom:15px}.transport-switch-actions{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0}.transport-switch-actions button:disabled{opacity:.45;cursor:not-allowed}.transport-switcher #transport-switch-status{font-size:12px;color:#315e7e;margin:8px 0 0}
+.transport-event-log{margin-top:14px;padding:12px;border:1px solid #d8e7f2;border-radius:9px;background:#f7fbfe}.transport-event-log h3{margin:0 0 8px;font-size:13px;color:#214e70}.transport-event-log ol{list-style:none;margin:0;padding:0;max-height:220px;overflow:auto}.transport-event-log li{display:flex;flex-wrap:wrap;gap:5px 10px;padding:7px 0;border-top:1px solid #e2ecf3;font-size:11px}.transport-event-log li:first-child{border-top:0}.transport-event-log time{color:#5f7890;min-width:118px}.transport-event-log strong{color:#234d6c}.transport-event-log span{color:#53718a;overflow-wrap:anywhere}
 
 .csi-history-heading{font-size:14px;color:#214e72;margin:22px 0 8px}.csi-history-empty{padding:12px;color:#6a849b;font-size:11px;margin:0}
 

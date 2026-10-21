@@ -9,6 +9,12 @@ function savedScenario() {
 }
 const initialScenario = savedScenario();
 const state = {scenarios: [], scenario: initialScenario, minute: scenarioMinutes[initialScenario] ?? 82, seed: 17, reveal: false, fault: false, data: null, timer: null, hardware: null, chartManual:false, view:viewNames.includes(requestedView)?requestedView:'forecast'};
+const voiceAttempts = new Set();
+const voiceMessages = new Map();
+const voiceRetryAfter = new Map();
+const voiceRetryTimers = new Map();
+const voiceGroup = d => `${d.scenario.key}:${d.seed}:${new Date().toISOString().slice(0,10)}`;
+const voiceMessageFor = d => !d?.breach?'No forecast alert; no Telegram message sent.':voiceMessages.get(voiceGroup(d))||'Forecast alert detected. Automatic Telegram delivery is starting…';
 const labels = {temperature_c:'Temperature',humidity_pct:'Humidity',pressure_pa:'Pressure',gas_resistance_ohm:'BME680 gas resistance',mq135_adc_raw:'MQ-135 raw ADC'};
 const units = {temperature_c:'°C',humidity_pct:'%',pressure_pa:'Pa',gas_resistance_ohm:'Ω',mq135_adc_raw:'raw'};
 const roomThemes = {
@@ -69,8 +75,8 @@ async function loadEpisode() {
   if (!response.ok) throw new Error((await response.json()).detail || 'Forecast unavailable');
   state.data = await response.json();
   state.hardware = null;
-  $('telegram-voice-status').textContent='Select a forecast with an early alert, then send its spoken guidance to the configured contact.';
   render();
+  if(state.view==='forecast'||state.view==='alerts')void autoSendTelegramVoice(state.data);
 }
 
 function text(id, content) { $(id).textContent = content; }
@@ -125,6 +131,7 @@ function render() {
   renderStatus();
   renderDetails();
   renderWorkspace();
+  text('telegram-voice-status',voiceMessageFor(d));
 }
 
 function renderRoute() {
@@ -193,7 +200,7 @@ function renderChart(){
 function timelineItem(icon,kind,time,title,sub){const item=document.createElement('div');item.className='timeline-item';const image=document.createElement('span');image.className=`timeline-icon ${kind}`;image.innerHTML=`<svg><use href="#${icon}"/></svg>`;const timeEl=document.createElement('span');timeEl.className='timeline-time';timeEl.textContent=time;const copy=document.createElement('span');copy.className='timeline-copy';const strong=document.createElement('b');strong.textContent=title;const detail=document.createElement('span');detail.textContent=sub;copy.append(strong,detail);item.append(image,timeEl,copy);return item;}
 function renderTimeline(){
   const d=state.data, alert=Boolean(d.breach), fault=state.fault, list=$('timeline');list.replaceChildren();
-  if(state.hardware){const h=state.hardware;list.append(timelineItem('i-sensor',h.tx_persisted?'success':'warning','TX',h.tx_persisted?'Event persisted on TX':'TX persistence failed','Reported by the connected ESP32 TX.'),timelineItem('i-wifi',h.rx_ack?'success':'warning','Wi-Fi',h.rx_ack?'Exact-ID RX ACK received':'No exact-ID RX ACK','RX storage is separate from backend storage.'),timelineItem('i-bt',h.bt_ack?'success':'muted','Bluetooth',h.bt_ack?'Nearby laptop stored receipt':'Bluetooth receipt unconfirmed','Reported by TX after the receiver ACK.'));$('voice-button').disabled=!alert;$('telegram-voice-button').disabled=!alert;return;}
+  if(state.hardware){const h=state.hardware;list.append(timelineItem('i-sensor',h.tx_persisted?'success':'warning','TX',h.tx_persisted?'Event persisted on TX':'TX persistence failed','Reported by the connected ESP32 TX.'),timelineItem('i-wifi',h.rx_ack?'success':'warning','Wi-Fi',h.rx_ack?'Exact-ID RX ACK received':'No exact-ID RX ACK','RX storage is separate from backend storage.'),timelineItem('i-bt',h.bt_ack?'success':'muted','Bluetooth',h.bt_ack?'Nearby laptop stored receipt':'Bluetooth receipt unconfirmed','Reported by TX after the receiver ACK.'));$('voice-button').disabled=!alert;return;}
   if(!alert){
     list.append(timelineItem('i-sensor','muted',`Minute ${d.minute}`,'Monitoring sensor trend','No forecast range crossing in the next 30 minutes.'),timelineItem('i-wifi','muted','Primary path','Wi-Fi to laptop on standby','No alert packet generated at this minute.'),timelineItem('i-bt','muted','Alternate','Bluetooth on standby','Fallback used only after a simulated Wi-Fi timeout.'));
   } else {
@@ -205,7 +212,6 @@ function renderTimeline(){
   if(revealedOutcome(d)==='correct-no-alert')list.append(timelineItem('i-check','success','Reveal','No-breach control confirmed','Model and simulator stayed within range.'));
   if(revealedOutcome(d)==='missed-breach')list.append(timelineItem('i-alert','warning','Reveal','Missed breach in synthetic episode','Simulator crossed a demo range without a model alert.'));
   $('voice-button').disabled=!alert;
-  $('telegram-voice-button').disabled=!alert;
 }
 function renderStatus(){
   const d=state.data,alert=Boolean(d.breach),fault=state.fault,b=$('status-banner');
@@ -317,8 +323,7 @@ function renderWorkspace(){
   if(state.view==='reports'&&state.data)$('workspace-body').firstElementChild.insertAdjacentHTML('afterend',reportsExportCard());
   if(state.view==='overview'&&state.data)$('workspace-body').insertAdjacentHTML('afterbegin',overviewCards(state.data.scenario.key));
   if(state.view==='alerts'&&state.data?.breach){
-    $('workspace-body').insertAdjacentHTML('beforeend','<section class="workspace-card integration-control alert-voice-action"><h2>Send spoken early alert</h2><p>The Telegram voice note explains the forecast lead time and the room-specific action. Only the configured owner account receives this scenario message.</p><button type="button" class="workspace-button" id="workspace-telegram-voice">Send forecast voice to Telegram</button><p id="workspace-telegram-status" role="status">Ready to send the selected forecast.</p></section>');
-    $('workspace-telegram-voice').addEventListener('click',()=>sendTelegramVoice($('workspace-telegram-voice'),$('workspace-telegram-status')));
+    $('workspace-body').insertAdjacentHTML('beforeend',`<section class="workspace-card integration-control alert-voice-action"><h2>Automatic spoken early alert</h2><p>When this forecast first warns, SafeSense sends the room-specific voice note to the configured Telegram contact. Refreshing the page does not send another copy of the same scenario and seed.</p><p id="workspace-telegram-status" role="status">${escapeHtml(voiceMessageFor(state.data))}</p></section>`);
   }
   const minute=$('setting-minute');if(minute)minute.addEventListener('input',()=>text('setting-minute-value',minute.value));
 }
@@ -342,21 +347,53 @@ function setView(view,push=true){
   document.querySelectorAll('.sidebar nav a[data-view]').forEach(link=>{const active=link.dataset.view===selected;link.classList.toggle('selected',active);if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
   document.title=`${selected==='forecast'?'Scenario Forecast':workspaceTitles[selected][0]} · SafeSense`;
   if(push)history.pushState({view:selected},'',selected==='forecast'?'/forecast':`/forecast?view=${selected}`);
-  renderWorkspace();if(selected==='live')window.liveDashboard.start();if(selected==='csi')window.csiCountDashboard.start();window.scrollTo(0,0);
+  renderWorkspace();if(selected==='live')window.liveDashboard.start();if(selected==='csi')window.csiCountDashboard.start();if((selected==='forecast'||selected==='alerts')&&state.data)void autoSendTelegramVoice(state.data);window.scrollTo(0,0);
 }
 function speak(){const d=state.data;if(!d?.breach)return;if(!('speechSynthesis' in window)){alert('Speech synthesis is unavailable in this browser.');return;}speechSynthesis.cancel();const message=`SafeSense early forecast for ${d.scenario.room}. ${labels[d.breach.channel]} may move ${d.breach.direction} the configured range in about ${d.breach.at_minute} minutes. Please verify the current sensor reading and inspect the area. ${d.scenario.response}`;speechSynthesis.speak(new SpeechSynthesisUtterance(message));}
-async function sendTelegramVoice(button,output){
-  const d=state.data;
+function setVoiceMessage(key,message){
+  voiceMessages.set(key,message);
+  if(state.data?.breach&&voiceGroup(state.data)===key){
+    text('telegram-voice-status',message);
+    const workspace=$('workspace-telegram-status');
+    if(workspace)workspace.textContent=message;
+  }
+}
+function retryVoiceLater(key){
+  voiceAttempts.delete(key);
+  voiceRetryAfter.set(key,Date.now()+15000);
+  if(voiceRetryTimers.has(key))return;
+  voiceRetryTimers.set(key,setTimeout(()=>{
+    voiceRetryTimers.delete(key);
+    if(state.data?.breach&&voiceGroup(state.data)===key)void autoSendTelegramVoice(state.data);
+  },15000));
+}
+async function autoSendTelegramVoice(d){
   if(!d?.breach)return;
-  button.disabled=true;
-  output.textContent='Generating spoken guidance and submitting it to Telegram…';
+  const key=voiceGroup(d);
+  if(voiceAttempts.has(key)||Date.now()<(voiceRetryAfter.get(key)||0))return;
+  voiceAttempts.add(key);
+  setVoiceMessage(key,'Forecast alert detected. Generating voice guidance and sending it to Telegram automatically…');
   try{
     const response=await fetch('/api/v1/forecast/voice-scenario',{method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({scenario:d.scenario.key,minute:d.minute,seed:d.seed})});
     const result=await response.json();
     if(!response.ok)throw new Error(result.detail||`HTTP ${response.status}`);
-    output.textContent=result.messages_sent>0?`Telegram accepted ${result.messages_sent} voice message for the configured contact. Event ${result.voice_event_id}.`:result.state==='DEFERRED_OFFLINE'?'Telegram is offline; voice was not sent.':`Voice outcome: ${result.state}. Check delivery status before retrying.`;
-  }catch(error){output.textContent=`Telegram voice could not be sent: ${String(error.message||error)}`;}
-  finally{button.disabled=false;}
+    if(result.state==='DEFERRED_OFFLINE'){
+      setVoiceMessage(key,'Internet unavailable. Telegram voice will retry automatically after the laptop reconnects.');
+      retryVoiceLater(key);
+    }else if(result.messages_sent>0){
+      setVoiceMessage(key,`Telegram accepted ${result.messages_sent} voice message. Event ${result.voice_event_id}.`);
+    }else if(result.state==='DUPLICATE'&&result.delivery_status?.some(row=>row.state==='ACCEPTED_BY_TELEGRAM')){
+      setVoiceMessage(key,`Telegram already accepted this alert. Event ${result.voice_event_id}.`);
+    }else{
+      setVoiceMessage(key,`Telegram delivery state: ${result.delivery_status?.map(row=>row.state).join(', ')||result.state}. Check the saved receipt before trying a new seed.`);
+    }
+  }catch(error){
+    const message=String(error.message||error);
+    if(error instanceof TypeError){
+      setVoiceMessage(key,'Dashboard connection interrupted. Telegram voice will retry automatically.');
+      retryVoiceLater(key);
+    }else setVoiceMessage(key,`Telegram voice unavailable: ${message}`);
+  }
 }
 function stop(){if(state.timer){clearInterval(state.timer);state.timer=null;}$('run-button').querySelector('span').textContent='Run Simulation';}
 function chooseScenario(scenario) {
@@ -373,7 +410,6 @@ $('wifi-fault').addEventListener('change',e=>{state.fault=e.target.checked;state
 $('reveal-truth').addEventListener('change',async e=>{state.reveal=e.target.checked;await loadEpisode();});
 $('chart-channel').addEventListener('change',()=>{state.chartManual=true;renderChart();});
 $('voice-button').addEventListener('click',speak);
-$('telegram-voice-button').addEventListener('click',()=>sendTelegramVoice($('telegram-voice-button'),$('telegram-voice-status')));
 $('run-button').addEventListener('click',async()=>{if(state.timer){stop();return;}state.minute=60;await loadEpisode();$('run-button').querySelector('span').textContent='Pause Simulation';state.timer=setInterval(async()=>{if(state.minute>=110){stop();return;}state.minute++;try{await loadEpisode();}catch(error){stop();showError(error);}},450);});
 $('scenario-search').addEventListener('input',e=>{const term=e.target.value.trim().toLowerCase();for(const option of $('scenario-select').options)option.hidden=Boolean(term&&!option.textContent.toLowerCase().includes(term));});
 $('scenario-search').addEventListener('keydown',e=>{if(e.key==='Enter'){const option=[...$('scenario-select').options].find(o=>!o.hidden);if(option){$('scenario-select').value=option.value;$('scenario-select').dispatchEvent(new Event('change'));setView('forecast');e.target.blur();}}});

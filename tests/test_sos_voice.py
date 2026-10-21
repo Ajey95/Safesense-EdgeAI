@@ -58,6 +58,8 @@ def test_forecast_scenario_voice_uses_context_and_keeps_source(tmp_path, monkeyp
     monkeypatch.setattr(sos_voice, "dispatch_scenario_voice",
                         lambda alert, database, config: sent.append(alert) or
                         {"state": "PROCESSED", "messages_sent": 1})
+    monkeypatch.setattr(sos_voice, "status",
+                        lambda database, event_id: [{"state": "ACCEPTED_BY_TELEGRAM"}])
     with TestClient(app) as client:
         denied = client.post("/api/v1/forecast/voice-scenario",
                              json={"scenario": "freezer_rebound", "minute": 82, "seed": 17})
@@ -65,12 +67,18 @@ def test_forecast_scenario_voice_uses_context_and_keeps_source(tmp_path, monkeyp
         response = client.post("/api/v1/forecast/voice-scenario",
                                headers={"X-SafeSense-Control": "dashboard"},
                                json={"scenario": "freezer_rebound", "minute": 82, "seed": 17})
+        same_episode = client.post("/api/v1/forecast/voice-scenario",
+                                   headers={"X-SafeSense-Control": "dashboard"},
+                                   json={"scenario": "freezer_rebound", "minute": 86, "seed": 17})
     assert response.status_code == 200
     body = response.json()
     assert body["source"] == "SYNTHETIC_FORECAST_SCENARIO"
     assert body["messages_sent"] == 1
     assert sent[0]["simulated"] is True and sent[0]["scenario_voice"] is True
     assert sent[0]["horizon_minutes"] == 25
+    assert same_episode.status_code == 200
+    assert sent[0]["event_id"] == sent[1]["event_id"] == body["voice_event_id"]
+    assert body["delivery_status"][0]["state"] == "ACCEPTED_BY_TELEGRAM"
     assert "Inspect compressor cycling and door traffic" in body["message"]
     assert "25 minutes" in body["message"]
 

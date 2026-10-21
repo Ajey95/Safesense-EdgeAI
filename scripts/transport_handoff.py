@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from scripts.transport_events import append_event
+
 ROOT = Path(__file__).resolve().parents[1]
 REQUEST = ROOT / "data/live/bt_reconnect_request.json"
 FRAME = ROOT / "data/live/bt_latest_frame.json"
@@ -35,9 +37,24 @@ def request_reconnect() -> dict:
     record = {"request_id": uuid4().hex,
               "requested_at_utc": datetime.now(timezone.utc).isoformat()}
     write_record(REQUEST, record)
+    try:
+        append_event("BLUETOOTH_RECONNECT_REQUESTED", request_id=record["request_id"])
+    except OSError:
+        pass
     return record
 
 
 def record_frame(event_id: str) -> None:
-    write_record(FRAME, {"event_id": event_id,
-                         "received_at_utc": datetime.now(timezone.utc).isoformat()})
+    previous = read_record(FRAME)
+    request = read_record(REQUEST)
+    received_at = datetime.now(timezone.utc).isoformat()
+    write_record(FRAME, {"event_id": event_id, "received_at_utc": received_at})
+    if request.get("requested_at_utc") and (
+        not previous.get("received_at_utc") or
+        previous["received_at_utc"] <= request["requested_at_utc"]
+    ):
+        try:
+            append_event("BLUETOOTH_PACKET_STORED", event_id=event_id,
+                         request_id=request.get("request_id"))
+        except OSError:
+            pass
