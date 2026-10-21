@@ -8,12 +8,12 @@ function savedScenario() {
   catch { return 'freezer_rebound'; }
 }
 const initialScenario = savedScenario();
-const state = {scenarios: [], scenario: initialScenario, minute: scenarioMinutes[initialScenario] ?? 82, seed: 17, reveal: false, fault: false, data: null, timer: null, hardware: null, chartManual:false, view:viewNames.includes(requestedView)?requestedView:'forecast'};
+const state = {scenarios: [], scenario: initialScenario, minute: scenarioMinutes[initialScenario] ?? 82, seed: 17, runId: null, reveal: false, fault: false, data: null, timer: null, hardware: null, chartManual:false, view:viewNames.includes(requestedView)?requestedView:'forecast'};
 const voiceAttempts = new Set();
 const voiceMessages = new Map();
 const voiceRetryAfter = new Map();
 const voiceRetryTimers = new Map();
-const voiceGroup = d => `${d.scenario.key}:${d.seed}:${new Date().toISOString().slice(0,10)}`;
+const voiceGroup = d => `${d.scenario.key}:${d.seed}:${state.runId||new Date().toISOString().slice(0,10)}`;
 const voiceMessageFor = d => !d?.breach?'No forecast alert; no Telegram message sent.':voiceMessages.get(voiceGroup(d))||'Forecast alert detected. Automatic Telegram delivery is starting…';
 const labels = {temperature_c:'Temperature',humidity_pct:'Humidity',pressure_pa:'Pressure',gas_resistance_ohm:'BME680 gas resistance',mq135_adc_raw:'MQ-135 raw ADC'};
 const units = {temperature_c:'°C',humidity_pct:'%',pressure_pa:'Pa',gas_resistance_ohm:'Ω',mq135_adc_raw:'raw'};
@@ -323,7 +323,7 @@ function renderWorkspace(){
   if(state.view==='reports'&&state.data)$('workspace-body').firstElementChild.insertAdjacentHTML('afterend',reportsExportCard());
   if(state.view==='overview'&&state.data)$('workspace-body').insertAdjacentHTML('afterbegin',overviewCards(state.data.scenario.key));
   if(state.view==='alerts'&&state.data?.breach){
-    $('workspace-body').insertAdjacentHTML('beforeend',`<section class="workspace-card integration-control alert-voice-action"><h2>Automatic spoken early alert</h2><p>When this forecast first warns, SafeSense sends the room-specific voice note to the configured Telegram contact. Refreshing the page does not send another copy of the same scenario and seed.</p><p id="workspace-telegram-status" role="status">${escapeHtml(voiceMessageFor(state.data))}</p></section>`);
+    $('workspace-body').insertAdjacentHTML('beforeend',`<section class="workspace-card integration-control alert-voice-action"><h2>Automatic spoken early alert</h2><p>When this forecast first warns, SafeSense sends the room-specific voice note to the configured Telegram contact. Refreshing does not resend it; a new Run Simulation creates a new alert when its forecast warns.</p><p id="workspace-telegram-status" role="status">${escapeHtml(voiceMessageFor(state.data))}</p></section>`);
   }
   const minute=$('setting-minute');if(minute)minute.addEventListener('input',()=>text('setting-minute-value',minute.value));
 }
@@ -374,7 +374,7 @@ async function autoSendTelegramVoice(d){
   voiceAttempts.add(key);
   setVoiceMessage(key,'Forecast alert detected. Generating voice guidance and sending it to Telegram automatically…');
   try{
-    const response=await fetch('/api/v1/forecast/voice-scenario',{method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({scenario:d.scenario.key,minute:d.minute,seed:d.seed})});
+    const response=await fetch('/api/v1/forecast/voice-scenario',{method:'POST',headers:{'Content-Type':'application/json','X-SafeSense-Control':'dashboard'},body:JSON.stringify({scenario:d.scenario.key,minute:d.minute,seed:d.seed,run_id:state.runId})});
     const result=await response.json();
     if(!response.ok)throw new Error(result.detail||`HTTP ${response.status}`);
     if(result.state==='DEFERRED_OFFLINE'){
@@ -400,6 +400,7 @@ function chooseScenario(scenario) {
   stop();
   state.scenario = scenario;
   state.minute = scenarioMinutes[scenario] ?? 82;
+  state.runId = null;
   state.chartManual = false;
   try { localStorage.setItem(scenarioStorageKey, scenario); } catch { /* Browser storage is optional. */ }
 }
@@ -410,7 +411,7 @@ $('wifi-fault').addEventListener('change',e=>{state.fault=e.target.checked;state
 $('reveal-truth').addEventListener('change',async e=>{state.reveal=e.target.checked;await loadEpisode();});
 $('chart-channel').addEventListener('change',()=>{state.chartManual=true;renderChart();});
 $('voice-button').addEventListener('click',speak);
-$('run-button').addEventListener('click',async()=>{if(state.timer){stop();return;}state.minute=60;await loadEpisode();$('run-button').querySelector('span').textContent='Pause Simulation';state.timer=setInterval(async()=>{if(state.minute>=110){stop();return;}state.minute++;try{await loadEpisode();}catch(error){stop();showError(error);}},450);});
+$('run-button').addEventListener('click',async()=>{if(state.timer){stop();return;}state.runId=crypto.randomUUID();state.minute=60;await loadEpisode();$('run-button').querySelector('span').textContent='Pause Simulation';state.timer=setInterval(async()=>{if(state.minute>=110){stop();return;}state.minute++;try{await loadEpisode();}catch(error){stop();showError(error);}},450);});
 $('scenario-search').addEventListener('input',e=>{const term=e.target.value.trim().toLowerCase();for(const option of $('scenario-select').options)option.hidden=Boolean(term&&!option.textContent.toLowerCase().includes(term));});
 $('scenario-search').addEventListener('keydown',e=>{if(e.key==='Enter'){const option=[...$('scenario-select').options].find(o=>!o.hidden);if(option){$('scenario-select').value=option.value;$('scenario-select').dispatchEvent(new Event('change'));setView('forecast');e.target.blur();}}});
 $('details-button').addEventListener('click',()=>$('details-dialog').showModal());

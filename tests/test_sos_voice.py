@@ -70,6 +70,14 @@ def test_forecast_scenario_voice_uses_context_and_keeps_source(tmp_path, monkeyp
         same_episode = client.post("/api/v1/forecast/voice-scenario",
                                    headers={"X-SafeSense-Control": "dashboard"},
                                    json={"scenario": "freezer_rebound", "minute": 86, "seed": 17})
+        new_run = client.post("/api/v1/forecast/voice-scenario",
+                              headers={"X-SafeSense-Control": "dashboard"},
+                              json={"scenario": "freezer_rebound", "minute": 86,
+                                    "seed": 17, "run_id": "run0000000000002"})
+        same_run = client.post("/api/v1/forecast/voice-scenario",
+                               headers={"X-SafeSense-Control": "dashboard"},
+                               json={"scenario": "freezer_rebound", "minute": 87,
+                                     "seed": 17, "run_id": "run0000000000002"})
     assert response.status_code == 200
     body = response.json()
     assert body["source"] == "SYNTHETIC_FORECAST_SCENARIO"
@@ -78,6 +86,9 @@ def test_forecast_scenario_voice_uses_context_and_keeps_source(tmp_path, monkeyp
     assert sent[0]["horizon_minutes"] == 25
     assert same_episode.status_code == 200
     assert sent[0]["event_id"] == sent[1]["event_id"] == body["voice_event_id"]
+    assert new_run.status_code == same_run.status_code == 200
+    assert new_run.json()["voice_event_id"] == same_run.json()["voice_event_id"]
+    assert new_run.json()["voice_event_id"] != body["voice_event_id"]
     assert body["delivery_status"][0]["state"] == "ACCEPTED_BY_TELEGRAM"
     assert "Inspect compressor cycling and door traffic" in body["message"]
     assert "25 minutes" in body["message"]

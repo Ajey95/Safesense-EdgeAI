@@ -31,6 +31,7 @@ class VoiceScenarioRequest(BaseModel):
     scenario: str
     minute: int = Field(ge=60, le=110)
     seed: int = Field(ge=1, le=999)
+    run_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,40}$")
 
 
 @lru_cache(maxsize=1)
@@ -113,9 +114,9 @@ def send_voice_scenario(body: VoiceScenarioRequest, request: Request,
     if breach is None:
         raise HTTPException(status_code=409, detail="This forecast has no early alert at the selected minute")
     from scripts.sos_voice import VoiceConfig, _message, dispatch_scenario_voice, status
-    # Stable across adjacent warning minutes and page refreshes for this demo day.
-    voice_event_id = (f"scenario-{result['scenario']['key']}-{body.seed:03d}-"
-                      f"{datetime.now(timezone.utc):%Y%m%d}")
+    # A started simulation has its own alert; page refreshes retain the daily identity.
+    identity = body.run_id or f"{datetime.now(timezone.utc):%Y%m%d}"
+    voice_event_id = f"scenario-{result['scenario']['key']}-{body.seed:03d}-{identity}"
     alert = {"event_id": voice_event_id, "simulated": True,
              "scenario_voice": True, "room": result["scenario"]["room"],
              "channel": {"temperature_c": "Temperature", "humidity_pct": "Humidity",
